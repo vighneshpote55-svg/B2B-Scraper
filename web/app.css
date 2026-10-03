@@ -1779,6 +1779,386 @@ button, input, select, textarea {
 .flex-center { display: flex; align-items: center; }
 
 /* ==========================================================================
+   13B. PROFESSIONAL UPGRADES: MAP, DOSSIER, BULK ACTIONS, WHATSAPP
+   ========================================================================== */
+
+/* Stop Scraping Button */
+.btn-cancel-scrape {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-cancel-scrape:hover {
+  background: #ef4444;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+}
+
+/* View Mode Toggle: Table vs Map */
+.view-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.view-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.view-toggle-btn:hover {
+  color: var(--text-primary);
+}
+
+.view-toggle-btn.active {
+  background: var(--card-bg);
+  color: var(--accent-indigo);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+/* Map View Container */
+.map-view-container {
+  width: 100%;
+  height: 540px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  margin-top: 0.5rem;
+  background: var(--bg-hover);
+  position: relative;
+  z-index: 1;
+}
+
+/* Leaflet Dark/Light Theme Integration */
+.leaflet-tile {
+  visibility: inherit !important;
+  opacity: 1 !important;
+}
+
+[data-theme="dark"] .leaflet-tile {
+  filter: brightness(0.72) invert(1) contrast(1.15) hue-rotate(190deg) saturate(0.35);
+}
+
+[data-theme="light"] .leaflet-tile {
+  filter: none;
+}
+
+.leaflet-popup-content-wrapper {
+  background: var(--card-bg) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-color);
+  border-radius: 12px !important;
+  box-shadow: var(--shadow-glass) !important;
+}
+
+.leaflet-popup-tip {
+  background: var(--card-bg) !important;
+}
+
+/* WhatsApp Outreach Button */
+.btn-whatsapp {
+  background: #25d366;
+  color: #ffffff !important;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 8px;
+  border: none;
+  padding: 0.45rem 0.85rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px rgba(37, 211, 102, 0.3);
+}
+
+.btn-whatsapp:hover {
+  background: #20ba5a;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(37, 211, 102, 0.45);
+}
+
+.btn-whatsapp-mini {
+  background: rgba(37, 211, 102, 0.15);
+  border: 1px solid rgba(37, 211, 102, 0.35);
+  color: #25d366 !important;
+  padding: 0.22rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.btn-whatsapp-mini:hover {
+  background: #25d366;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(37, 211, 102, 0.35);
+}
+
+/* Dossier Drawer Styles */
+#dossier-drawer {
+  width: 480px;
+  max-width: 92vw;
+}
+
+.dossier-quick-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.dossier-card {
+  background: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1rem 1.15rem;
+  margin-bottom: 1rem;
+}
+
+.dossier-card-title {
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+
+.dossier-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.45rem 0;
+  border-bottom: 1px dashed var(--border-color);
+  font-size: 0.85rem;
+  gap: 0.5rem;
+}
+
+.dossier-detail-row:last-child {
+  border-bottom: none;
+}
+
+.detail-label {
+  color: var(--text-muted);
+  font-weight: 600;
+  min-width: 90px;
+}
+
+.detail-val {
+  color: var(--text-primary);
+  font-weight: 500;
+  word-break: break-word;
+  flex: 1;
+  text-align: right;
+}
+
+.dossier-reputation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.rep-box {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.65rem 0.5rem;
+  text-align: center;
+}
+
+.rep-num {
+  display: block;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--accent-indigo);
+}
+
+.rep-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.dossier-reasons-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.reason-chip {
+  font-size: 0.75rem;
+  color: var(--accent-indigo);
+  background: rgba(99, 102, 241, 0.1);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+/* Outreach Pitch Generator */
+.outreach-generator-card {
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  box-shadow: 0 4px 18px rgba(99, 102, 241, 0.1);
+}
+
+.dossier-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.outreach-tabs {
+  display: flex;
+  background: var(--bg-hover);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.outreach-tab-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.55rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.outreach-tab-btn.active {
+  background: var(--card-bg);
+  color: var(--accent-indigo);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.outreach-textarea {
+  width: 100%;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  padding: 0.65rem;
+  resize: vertical;
+  margin-bottom: 0.65rem;
+}
+
+.outreach-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+/* Floating Multi-Select Bulk Actions Bar */
+.bulk-bar {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  background: rgba(17, 24, 39, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--accent-indigo);
+  box-shadow: 0 10px 35px -5px rgba(0, 0, 0, 0.5), 0 0 20px rgba(99, 102, 241, 0.25);
+  border-radius: 9999px;
+  padding: 0.55rem 1.15rem;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-theme="light"] .bulk-bar {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid var(--accent-indigo);
+}
+
+.bulk-bar-content {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.bulk-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.bulk-count-badge {
+  background: var(--accent-indigo);
+  color: #ffffff;
+  border-radius: 9999px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.78rem;
+}
+
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Checkbox Styles in Table */
+.th-check {
+  width: 38px;
+  text-align: center;
+}
+
+.row-check-cell {
+  text-align: center;
+}
+
+.lead-checkbox {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-indigo);
+}
+
+/* Row selection highlight */
+.data-table tbody tr.is-selected {
+  background: rgba(99, 102, 241, 0.1) !important;
+}
+
+.data-table tbody tr {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+/* ==========================================================================
    14. UNIVERSAL RESPONSIVE BREAKPOINTS (Mobile, Tablet, Desktop)
    ========================================================================== */
 

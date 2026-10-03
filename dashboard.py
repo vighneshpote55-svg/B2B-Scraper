@@ -133,6 +133,12 @@ def background_job_processor(job_id, params):
     completed = False
 
     while time.time() - start_time < max_wait:
+        with JOB_LOCK:
+            if JOB_CACHE.get(job_id, {}).get("cancel_requested"):
+                JOB_CACHE[job_id]["status"] = "cancelled"
+                JOB_CACHE[job_id]["stage"] = "Extraction cancelled by user."
+                return
+
         try:
             _, raw = scraper_req("GET", f"/api/v1/jobs/{job_id}", timeout=10)
             res = json.loads(raw.decode())
@@ -615,6 +621,29 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             })
             return
 
+        if path == "/api/scrape/stop":
+            content_length = int(self.headers.get("Content-Length", 0))
+            body_bytes = self.rfile.read(content_length)
+            try:
+                params = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
+            except Exception:
+                params = {}
+            job_id = params.get("job_id")
+            if not job_id:
+                self._send_json({"error": "job_id is required"}, 400)
+                return
+            with JOB_LOCK:
+                if job_id in JOB_CACHE:
+                    JOB_CACHE[job_id]["cancel_requested"] = True
+                    JOB_CACHE[job_id]["status"] = "cancelled"
+                    JOB_CACHE[job_id]["stage"] = "Extraction cancelled by user."
+            try:
+                scraper_req("DELETE", f"/api/v1/jobs/{job_id}", timeout=5)
+            except Exception:
+                pass
+            self._send_json({"success": True, "message": f"Job {job_id} cancelled."})
+            return
+
         if path == "/api/docker/restart":
             # Attempt to restart or start docker container
             try:
@@ -703,22 +732,26 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             content_length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(content_length).decode("utf-8")) if content_length > 0 else {}
             job_id = body.get("job_id", "")
+            custom_leads = body.get("leads")
 
             leads_to_sync = []
-            with JOB_LOCK:
-                if job_id and job_id in JOB_CACHE:
-                    leads_to_sync = JOB_CACHE[job_id].get("leads", [])
-                elif not job_id and JOB_CACHE:
-                    latest_job = list(JOB_CACHE.values())[-1]
-                    leads_to_sync = latest_job.get("leads", [])
-                    job_id = latest_job.get("id", "")
+            if custom_leads and isinstance(custom_leads, list) and len(custom_leads) > 0:
+                leads_to_sync = custom_leads
+            else:
+                with JOB_LOCK:
+                    if job_id and job_id in JOB_CACHE:
+                        leads_to_sync = JOB_CACHE[job_id].get("leads", [])
+                    elif not job_id and JOB_CACHE:
+                        latest_job = list(JOB_CACHE.values())[-1]
+                        leads_to_sync = latest_job.get("leads", [])
+                        job_id = latest_job.get("id", "")
 
-            if not leads_to_sync and job_id:
-                saved_file = os.path.join(DATA_DIR, f"leads_{job_id}.json")
-                if os.path.isfile(saved_file):
-                    with open(saved_file) as f:
-                        d = json.load(f)
-                        leads_to_sync = d.get("leads", [])
+                if not leads_to_sync and job_id:
+                    saved_file = os.path.join(DATA_DIR, f"leads_{job_id}.json")
+                    if os.path.isfile(saved_file):
+                        with open(saved_file) as f:
+                            d = json.load(f)
+                            leads_to_sync = d.get("leads", [])
 
             if not leads_to_sync:
                 self._send_json({"success": False, "error": "No leads found to sync. Run an extraction first."}, 400)

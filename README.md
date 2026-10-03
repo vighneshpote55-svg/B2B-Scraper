@@ -51,13 +51,35 @@ Visits each business website concurrently to extract direct social channels:
 - 👥 **Facebook Pages:** `facebook.com/<page>`
 - 💼 **LinkedIn Profiles:** `linkedin.com/company/<name>` or `linkedin.com/in/<profile>`
 
-### 5. ☁️ Live Supabase Cloud Database Sync
+### 5. 💬 1-Click Direct WhatsApp Outreach
+- Standardizes international and domestic mobile numbers (e.g. `+91` format for India, `+1` for North America).
+- Generates verified direct WhatsApp links (`wa.me/<number>`) with high-converting personalized introductory messages tailored to the business's niche, star rating, and location.
+
+### 6. 📋 Slide-Over Lead Intelligence Dossier & Instant Pitch Generator
+- Click any row in the table or pin on the map to slide open an in-depth **Business Dossier**.
+- Displays verified contact intelligence, website domain previews, Google Maps star reputation, review volume, and itemized scoring reasons.
+- **Automated Cold Outreach Generator:** Instant copy-paste personalized pitches for both **WhatsApp** and **Cold Email** (complete with subject lines, personalized compliment, rating reference, value proposition, and low-friction CTA).
+
+### 7. 🔘 Floating Multi-Select Bulk Actions Bar
+- Checkbox multi-selection for fast batch workflows:
+  - 📋 **Copy Selected Emails:** Deduplicates and copies all selected email addresses into clipboard.
+  - 📞 **Copy Selected Phones:** Formats and copies all selected phone numbers.
+  - ☁️ **Sync Selected to Supabase:** Transmits only the selected qualified prospects to your cloud PostgreSQL database.
+  - 📥 **Export Selected CSV:** Instant in-browser CSV generation and download with complete lead metrics.
+
+### 8. 🗺️ Interactive Geographic Leaflet Map View
+- Toggle between **Table View** and **Interactive Map View** in one click.
+- High-resolution OpenStreetMap tiles with color-coded custom circle markers (🔥 Hot Red, ⚡ Warm Amber, ❄️ Cold Blue).
+- Interactive marker popups with business name, category, rating, direct phone, WhatsApp link, and full dossier drawer preview.
+
+### 9. ☁️ Live Supabase Cloud Database Sync
 - Seamless two-way integration with your PostgreSQL database on **Supabase**.
 - Includes pre-built schema with indexes and Row-Level Security (`supabase_schema.sql`).
 - Automatic background sync upon scrape completion, plus manual one-click sync.
 
-### 6. 📊 Instant CRM & CSV Export
+### 10. 📊 Instant CRM & CSV Export & Stop Control
 - One-click exports to structured **CSV** or **JSON** formatted for HubSpot, Salesforce, Apollo, Instantly, or Cold Email tools.
+- **Live Stop Control:** Stop active extraction jobs instantly from the live progress bar if desired.
 
 ---
 
