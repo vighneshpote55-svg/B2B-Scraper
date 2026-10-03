@@ -1396,7 +1396,13 @@ button, input, select, textarea {
   box-shadow: 0 0 10px rgba(16, 185, 129, 0.35);
 }
 
-/* Website Cell */
+/* Website & Socials Cell */
+.website-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
 .website-link {
   color: var(--accent-indigo);
   text-decoration: none;
@@ -1408,6 +1414,62 @@ button, input, select, textarea {
 
 .website-link:hover {
   text-decoration: underline;
+}
+
+.social-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.15rem;
+}
+
+.social-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 9999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+}
+
+.ig-chip {
+  background: rgba(225, 48, 108, 0.12);
+  color: #e1306c;
+  border: 1px solid rgba(225, 48, 108, 0.25);
+}
+.ig-chip:hover {
+  background: rgba(225, 48, 108, 0.22);
+  border-color: #e1306c;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(225, 48, 108, 0.25);
+}
+
+.fb-chip {
+  background: rgba(24, 119, 242, 0.12);
+  color: #1877f2;
+  border: 1px solid rgba(24, 119, 242, 0.25);
+}
+.fb-chip:hover {
+  background: rgba(24, 119, 242, 0.22);
+  border-color: #1877f2;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(24, 119, 242, 0.25);
+}
+
+.li-chip {
+  background: rgba(10, 102, 194, 0.12);
+  color: #0a66c2;
+  border: 1px solid rgba(10, 102, 194, 0.25);
+}
+.li-chip:hover {
+  background: rgba(10, 102, 194, 0.22);
+  border-color: #0a66c2;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(10, 102, 194, 0.25);
 }
 
 /* Rating Cell */

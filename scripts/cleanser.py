@@ -10,6 +10,7 @@ Features:
 """
 import re
 import urllib.parse
+import urllib.request
 
 # Common invalid / placeholder / bot email prefixes & domains to discard
 JUNK_EMAIL_EXACT = {
@@ -321,3 +322,78 @@ def deduplicate_leads(leads: list) -> list:
         unique.append(item)
 
     return unique
+
+
+# ── Website Social Profile Discovery (Instagram, Facebook, LinkedIn) ─────────
+SOCIAL_RE = {
+    "instagram": re.compile(r"https?://(?:www\.)?instagram\.com/([A-Za-z0-9_.]+)", re.I),
+    "facebook":  re.compile(r"https?://(?:www\.|m\.|web\.)?facebook\.com/([A-Za-z0-9_.\-]+)", re.I),
+    "linkedin":  re.compile(r"https?://(?:[a-z]{2,3}\.)?linkedin\.com/(?:company|in|school)/([A-Za-z0-9_.\-%]+)", re.I),
+}
+_SKIP_HANDLES = {
+    "", "home", "pages", "people", "help", "about", "policies", "policy",
+    "legal", "tos", "privacy", "settings", "sharer", "tr", "profile.php",
+    "plugins", "dialog", "intent", "login", "share.php", "permalink.php",
+    "p", "reel", "reels", "explore", "stories", "tv", "watch", "events",
+    "groups", "marketplace", "gaming", "photo", "hashtag", "search", "pg"
+}
+
+def _fetch_site_html(url: str, timeout: int = 8) -> str:
+    """Fetch website HTML with quick timeout."""
+    if not url:
+        return ""
+    if not url.startswith(("http://", "https://")):
+        url = "http://" + url
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml"
+        })
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read(300_000).decode("utf-8", "replace")
+    except Exception:
+        return ""
+
+def find_socials_in_html(html: str) -> dict:
+    """Extract first valid social profile links found in HTML content."""
+    socials = {"instagram": "", "facebook": "", "linkedin": ""}
+    for platform, pattern in SOCIAL_RE.items():
+        for m in pattern.finditer(html or ""):
+            handle = m.group(1).lower()
+            if handle in _SKIP_HANDLES:
+                continue
+            if platform == "facebook" and (handle.isdigit() or len(handle) < 3):
+                continue
+            socials[platform] = m.group(0).rstrip('"\'/').replace("\\", "")
+            break
+    return socials
+
+def enrich_socials(leads: list, max_workers: int = 6) -> list:
+    """Scan websites of leads in parallel to extract Instagram, Facebook, and LinkedIn IDs."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    to_scan = [l for l in leads if l.get("website") and not (l.get("instagram") and l.get("facebook"))]
+    if not to_scan:
+        return leads
+
+    def _worker(lead):
+        try:
+            html = _fetch_site_html(lead["website"])
+            if html:
+                found = find_socials_in_html(html)
+                for k, v in found.items():
+                    if v and not lead.get(k):
+                        lead[k] = clean_social_url(v)
+                # Recalculate score with new socials
+                scoring = score_lead(lead)
+                lead["lead_score"] = scoring["score"]
+                lead["lead_tier"] = scoring["tier"]
+                lead["lead_tier_label"] = scoring["tier_label"]
+                lead["score_reasons"] = scoring["reasons"]
+        except Exception:
+            pass
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        list(executor.map(_worker, to_scan))
+
+    return leads

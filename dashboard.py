@@ -46,11 +46,12 @@ if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
 
 try:
-    from scripts.cleanser import clean_lead, deduplicate_leads, extract_domain
+    from scripts.cleanser import clean_lead, deduplicate_leads, extract_domain, enrich_socials
 except ImportError:
     clean_lead = lambda x: x
     deduplicate_leads = lambda x: x
     extract_domain = lambda x: ""
+    enrich_socials = lambda x: x
 
 try:
     from scripts.supabase_client import (
@@ -205,6 +206,13 @@ def background_job_processor(job_id, params):
 
         # Deduplicate
         cleaned_leads = deduplicate_leads(cleaned_leads)
+
+        # Enrich social profiles (Instagram / Facebook / LinkedIn) from websites
+        if params.get("socials", True):
+            with JOB_LOCK:
+                JOB_CACHE[job_id]["stage"] = "Scanning websites for Instagram, Facebook, and LinkedIn profiles..."
+                JOB_CACHE[job_id]["progress_percent"] = 96
+            cleaned_leads = enrich_socials(cleaned_leads)
 
         # Save to data directory
         data_file = os.path.join(DATA_DIR, f"leads_{job_id}.json")
@@ -526,7 +534,7 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             city = params.get("city", "").strip()
             depth = int(params.get("depth", 5))
             extract_email = bool(params.get("email", True))
-            find_socials = bool(params.get("socials", False))
+            find_socials = bool(params.get("socials", True))
             lat = params.get("lat")
             lon = params.get("lon")
 

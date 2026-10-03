@@ -29,6 +29,7 @@
   const toggleEmail = document.getElementById('toggle-email');
   const toggleClean = document.getElementById('toggle-clean');
   const toggleScore = document.getElementById('toggle-score');
+  const toggleSocials = document.getElementById('toggle-socials');
   const btnSubmitScrape = document.getElementById('btn-submit-scrape');
   const btnSubmitText = document.getElementById('btn-submit-text');
 
@@ -494,7 +495,8 @@
         depth: parseInt(inputDepth.value, 10),
         email: toggleEmail.checked,
         clean: toggleClean.checked,
-        score: toggleScore.checked
+        score: toggleScore.checked,
+        socials: toggleSocials ? toggleSocials.checked : true
       });
     });
   }
@@ -775,6 +777,26 @@
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
         </a>` : '<span style="color:var(--text-muted);font-size:0.75rem">—</span>';
 
+      // Social Profiles (Instagram, Facebook, LinkedIn)
+      const igVal = lead.instagram || '';
+      const fbVal = lead.facebook || '';
+      const liVal = lead.linkedin || '';
+      let socialsHtml = '';
+      if (igVal || fbVal || liVal) {
+        socialsHtml = '<div class="social-chips-row">';
+        if (igVal) {
+          const igHandle = igVal.replace(/^https?:\/\/(?:www\.)?instagram\.com\//i, '@').replace(/\/$/, '');
+          socialsHtml += `<a href="${escapeHtml(igVal)}" target="_blank" rel="noopener noreferrer" class="social-chip ig-chip" title="Instagram: ${escapeHtml(igVal)}">📸 ${escapeHtml(igHandle)}</a>`;
+        }
+        if (fbVal) {
+          socialsHtml += `<a href="${escapeHtml(fbVal)}" target="_blank" rel="noopener noreferrer" class="social-chip fb-chip" title="Facebook: ${escapeHtml(fbVal)}">👥 Facebook</a>`;
+        }
+        if (liVal) {
+          socialsHtml += `<a href="${escapeHtml(liVal)}" target="_blank" rel="noopener noreferrer" class="social-chip li-chip" title="LinkedIn: ${escapeHtml(liVal)}">💼 LinkedIn</a>`;
+        }
+        socialsHtml += '</div>';
+      }
+
       // Rating
       const rating = lead.review_rating ? Number(lead.review_rating).toFixed(1) : null;
       const reviews = lead.review_count || 0;
@@ -805,7 +827,10 @@
             </div>
           </td>
           <td>
-            ${websiteHtml}
+            <div class="website-cell">
+              ${websiteHtml}
+              ${socialsHtml}
+            </div>
           </td>
           <td>
             ${ratingHtml}

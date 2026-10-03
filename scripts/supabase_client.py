@@ -7,6 +7,7 @@ Communicates with Supabase via the PostgREST REST API.
 import json
 import os
 import sys
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -134,9 +135,17 @@ def format_lead_for_supabase(lead: dict, job_id: str = "") -> dict:
     if isinstance(reasons, str):
         reasons = [r.strip() for r in reasons.split(",") if r.strip()]
 
+    phone_val = lead.get("clean_phone") or lead.get("phone") or ""
+    domain_val = lead.get("domain") or ""
+    title_val = lead.get("title") or "Unknown Business"
+    addr_val = lead.get("address") or ""
+    unique_key = f"{phone_val}|{domain_val}" if (phone_val and domain_val) else f"{title_val}|{addr_val}"
+    record_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, unique_key))
+
     return {
+        "id": record_id,
         "job_id": job_id or lead.get("job_id") or "",
-        "title": lead.get("title") or "Unknown Business",
+        "title": title_val,
         "category": lead.get("category") or "",
         "clean_phone": lead.get("clean_phone") or lead.get("phone") or "",
         "phone": lead.get("phone") or "",
@@ -180,6 +189,15 @@ def sync_leads(leads, job_id="", supabase_url=None, supabase_key=None, table=Non
 
     formatted_records = [format_lead_for_supabase(l, job_id=job_id) for l in leads]
     total_synced = 0
+
+    # If re-syncing a specific job, clean out prior copy to avoid unique index conflict
+    if job_id:
+        try:
+            del_endpoint = f"{url}/rest/v1/{table_name}?job_id=eq.{urllib.parse.quote(str(job_id))}"
+            del_req = urllib.request.Request(del_endpoint, headers=headers, method="DELETE")
+            urllib.request.urlopen(del_req, timeout=10)
+        except Exception:
+            pass
 
     # Batch inserts
     for i in range(0, len(formatted_records), batch_size):
