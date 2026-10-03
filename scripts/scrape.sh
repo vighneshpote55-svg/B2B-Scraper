@@ -4,6 +4,13 @@
 # Example: ./scripts/scrape.sh "coffee shops in Austin TX" 30.2672 -97.7431 5
 set -euo pipefail
 
+# Auto-load .env from repository root if present
+if [ -f "$(dirname "$0")/../.env" ]; then
+  set -a
+  source "$(dirname "$0")/../.env"
+  set +a
+fi
+
 BASE="${SCRAPER_BASE_URL:-http://localhost:8080}"
 KEY="${SCRAPER_API_KEY:-}"
 # NOTE: empty-array expansion needs the ${a[@]+...} guard — plain "${AUTH[@]}" is an

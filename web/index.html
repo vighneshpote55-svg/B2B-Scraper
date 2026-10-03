@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LeadMap Pro — Google Maps Lead Intelligence Dashboard</title>
+  <meta name="description" content="Turn Google Maps searches into clean, enriched B2B lead lists with verified phones, emails, websites, ratings, and instant lead scoring.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <!-- Digital Wave Field: Autonomous Mathematical Mesh (No Cursor Follow) -->
+  <canvas id="digital-wave-canvas" class="digital-wave-canvas" aria-hidden="true"></canvas>
+
+  <!-- Header / Navigation -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-group">
+        <div class="brand-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
+            <line x1="8" y1="2" x2="8" y2="18"></line>
+            <line x1="16" y1="6" x2="16" y2="22"></line>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>LeadMap <span>Pro</span></h1>
+          <p class="brand-subtitle">Local Lead Extraction &amp; Quality Scoring</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div class="header-status-group">
+          <div id="scraper-status-pill" class="status-pill status-checking">
+            <span class="status-dot"></span>
+            <span id="scraper-status-text">Checking Scraper...</span>
+          </div>
+          <!-- Supabase Cloud Status & Settings Button -->
+          <button id="btn-supabase-status" class="btn btn-ghost supabase-pill" title="Configure Supabase Cloud Sync">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
+            <span id="supabase-pill-text">Supabase</span>
+            <span id="supabase-status-dot" class="status-dot"></span>
+          </button>
+        </div>
+
+        <div class="header-controls-group">
+          <!-- Theme Toggle Button -->
+          <button id="btn-theme-toggle" class="btn-icon" title="Toggle Light / Dark Mode" aria-label="Toggle theme">
+            <svg id="theme-icon-sun" class="theme-icon is-hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            <svg id="theme-icon-moon" class="theme-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+          </button>
+
+          <button id="btn-toggle-history" class="btn btn-ghost" title="View Scrape History">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <span>History</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Scroll Marquee Feature Strip (Infinite SaaS Ticker) -->
+  <div class="scroll-marquee-banner" aria-label="LeadMap Pro Core Capabilities">
+    <div class="marquee-track">
+      <div class="marquee-item"><span class="m-icon">⚡</span> Verified Phone Formats</div>
+      <div class="marquee-item"><span class="m-icon">🛡️</span> Zero-Duplicate Engine</div>
+      <div class="marquee-item"><span class="m-icon">☁️</span> Live Supabase Cloud Sync</div>
+      <div class="marquee-item"><span class="m-icon">🔥</span> AI Lead Scoring (HOT / WARM)</div>
+      <div class="marquee-item"><span class="m-icon">📊</span> Instant CRM &amp; CSV Export</div>
+      <div class="marquee-item"><span class="m-icon">📍</span> Precision Geocoding</div>
+      <div class="marquee-item"><span class="m-icon">🌐</span> Domain &amp; Social Enrichment</div>
+      <!-- Seamless loop duplicate set -->
+      <div class="marquee-item"><span class="m-icon">⚡</span> Verified Phone Formats</div>
+      <div class="marquee-item"><span class="m-icon">🛡️</span> Zero-Duplicate Engine</div>
+      <div class="marquee-item"><span class="m-icon">☁️</span> Live Supabase Cloud Sync</div>
+      <div class="marquee-item"><span class="m-icon">🔥</span> AI Lead Scoring (HOT / WARM)</div>
+      <div class="marquee-item"><span class="m-icon">📊</span> Instant CRM &amp; CSV Export</div>
+      <div class="marquee-item"><span class="m-icon">📍</span> Precision Geocoding</div>
+      <div class="marquee-item"><span class="m-icon">🌐</span> Domain &amp; Social Enrichment</div>
+    </div>
+  </div>
+
+  <!-- Main Content Area -->
+  <main class="main-container">
+    <!-- Top Action Card: Scrape Controller -->
+    <section class="card scrape-control-card scroll-reveal" aria-labelledby="heading-scrape-config">
+      <div class="card-header">
+        <div>
+          <h2 id="heading-scrape-config" class="card-title">Extract New Leads</h2>
+          <p class="card-desc">Enter your target industry and location to automatically crawl listings and qualify prospects.</p>
+        </div>
+        <div class="quick-preset-chips">
+          <span class="preset-label">Quick search:</span>
+          <button type="button" class="chip-preset" data-keyword="Dentists" data-city="Denver, CO">🦷 Dentists (Denver)</button>
+          <button type="button" class="chip-preset" data-keyword="Gyms & Fitness" data-city="Miami, FL">💪 Gyms (Miami)</button>
+          <button type="button" class="chip-preset" data-keyword="Roofing Contractors" data-city="Austin, TX">🏠 Roofing (Austin)</button>
+          <button type="button" class="chip-preset" data-keyword="Coffee Shops" data-city="Seattle, WA">☕ Cafes (Seattle)</button>
+        </div>
+      </div>
+
+      <form id="form-scrape" class="scrape-form" novalidate>
+        <div class="form-row">
+          <!-- Keyword Input -->
+          <div class="form-group flex-2">
+            <label for="input-keyword" class="form-label">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              Target Business Niche / Keyword
+            </label>
+            <input 
+              type="text" 
+              id="input-keyword" 
+              name="keyword" 
+              class="form-input" 
+              placeholder="e.g. Commercial HVAC, Dermatologists, Italian Restaurants" 
+              required
+              autocomplete="off"
+            >
+          </div>
+
+          <!-- City / Location Input -->
+          <div class="form-group flex-2">
+            <label for="input-city" class="form-label">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+              Target City or Metro Area
+            </label>
+            <input 
+              type="text" 
+              id="input-city" 
+              name="city" 
+              class="form-input" 
+              placeholder="e.g. Dallas, TX or Chicago, IL" 
+              required
+              autocomplete="off"
+            >
+          </div>
+
+          <!-- Depth Slider -->
+          <div class="form-group flex-1">
+            <label for="input-depth" class="form-label flex-between">
+              <span>Scroll Depth</span>
+              <span id="depth-badge" class="badge-value">5 (≈ 20 leads)</span>
+            </label>
+            <input 
+              type="range" 
+              id="input-depth" 
+              name="depth" 
+              class="form-slider" 
+              min="1" 
+              max="20" 
+              value="5"
+            >
+          </div>
+        </div>
+
+        <!-- Options and Features Toggles -->
+        <div class="form-options-bar">
+          <div class="toggle-group">
+            <label class="toggle-control" for="toggle-email">
+              <input type="checkbox" id="toggle-email" name="email" checked>
+              <span class="toggle-switch"></span>
+              <span class="toggle-text">
+                <strong>Extract Emails</strong>
+                <small>Visits websites to uncover direct emails</small>
+              </span>
+            </label>
+
+            <label class="toggle-control" for="toggle-clean">
+              <input type="checkbox" id="toggle-clean" name="clean" checked>
+              <span class="toggle-switch"></span>
+              <span class="toggle-text">
+                <strong>Smart Cleanse &amp; Dedupe</strong>
+                <small>Removes spam/bot emails, formats phones</small>
+              </span>
+            </label>
+
+            <label class="toggle-control" for="toggle-score">
+              <input type="checkbox" id="toggle-score" name="score" checked>
+              <span class="toggle-switch"></span>
+              <span class="toggle-text">
+                <strong>Lead Scoring (HOT 🔥 / WARM ⚡)</strong>
+                <small>Calculates 0-100 quality score for outreach</small>
+              </span>
+            </label>
+          </div>
+
+          <button type="submit" id="btn-submit-scrape" class="btn btn-primary btn-large">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+            <span id="btn-submit-text">Launch Extraction</span>
+          </button>
+        </div>
+      </form>
+
+      <!-- Active Job Banner / Live Progress Indicator (Hidden by default) -->
+      <div id="live-progress-box" class="progress-box is-hidden" aria-live="polite">
+        <div class="progress-header">
+          <div class="progress-title-group">
+            <div class="spinner-ring"></div>
+            <div>
+              <h3 id="progress-stage-title" class="progress-title">Starting Scraper...</h3>
+              <p id="progress-subtext" class="progress-subtitle">Targeting Google Maps API</p>
+            </div>
+          </div>
+          <div class="progress-stats">
+            <span id="progress-timer" class="stat-timer">00:00</span>
+            <span id="progress-pct-badge" class="badge-pct">15%</span>
+          </div>
+        </div>
+
+        <!-- Motion Path Follow Animation: Real-time Data Flow Pipeline -->
+        <div class="pipeline-motion-container" aria-label="Lead Extraction Flow Pipeline">
+          <div class="pipeline-track-wrapper">
+            <!-- Node 1: Maps -->
+            <div class="pipeline-step-node active" id="p-node-maps">
+              <div class="p-step-badge">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+              </div>
+              <span class="p-step-title">Google Maps</span>
+            </div>
+
+            <!-- Path 1 with Motion Packet -->
+            <div class="pipeline-wire">
+              <svg class="pipeline-wire-svg" viewBox="0 0 160 16" preserveAspectRatio="none">
+                <line class="wire-base" x1="0" y1="8" x2="160" y2="8" />
+                <line class="wire-pulse" x1="0" y1="8" x2="160" y2="8" />
+                <circle class="wire-packet packet-a" cx="0" cy="8" r="3.5" />
+                <circle class="wire-packet packet-b" cx="0" cy="8" r="2.2" />
+              </svg>
+            </div>
+
+            <!-- Node 2: AI Cleanser -->
+            <div class="pipeline-step-node" id="p-node-cleanse">
+              <div class="p-step-badge">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+              </div>
+              <span class="p-step-title">Clean &amp; Score</span>
+            </div>
+
+            <!-- Path 2 with Motion Packet -->
+            <div class="pipeline-wire">
+              <svg class="pipeline-wire-svg" viewBox="0 0 160 16" preserveAspectRatio="none">
+                <line class="wire-base" x1="0" y1="8" x2="160" y2="8" />
+                <line class="wire-pulse" x1="0" y1="8" x2="160" y2="8" />
+                <circle class="wire-packet packet-a" cx="0" cy="8" r="3.5" />
+                <circle class="wire-packet packet-b" cx="0" cy="8" r="2.2" />
+              </svg>
+            </div>
+
+            <!-- Node 3: Cloud -->
+            <div class="pipeline-step-node" id="p-node-cloud">
+              <div class="p-step-badge">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
+              </div>
+              <span class="p-step-title">Supabase Sync</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="progress-bar-track">
+          <div id="progress-bar-fill" class="progress-bar-fill" style="width: 15%"></div>
+        </div>
+
+        <div class="progress-steps-legend">
+          <span class="step-indicator done">1. Geocoded</span>
+          <span class="step-indicator active">2. Maps Scrape</span>
+          <span class="step-indicator">3. Email Extraction</span>
+          <span class="step-indicator">4. Quality Scoring</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Metrics Cards Grid (with Card Hover Animation & Scroll Reveal) -->
+    <section id="metrics-section" class="metrics-grid scroll-reveal">
+      <div class="metric-card card card-hover">
+        <div class="metric-icon icon-total">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+        </div>
+        <div class="metric-info">
+          <span class="metric-label">Total Leads</span>
+          <strong id="metric-total" class="metric-number">0</strong>
+        </div>
+      </div>
+
+      <div class="metric-card card card-hover">
+        <div class="metric-icon icon-hot">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>
+        </div>
+        <div class="metric-info">
+          <span class="metric-label">Hot Leads (🔥)</span>
+          <strong id="metric-hot" class="metric-number">0</strong>
+        </div>
+      </div>
+
+      <div class="metric-card card card-hover">
+        <div class="metric-icon icon-email">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+        </div>
+        <div class="metric-info">
+          <span class="metric-label">With Email</span>
+          <strong id="metric-emails" class="metric-number">0</strong>
+        </div>
+      </div>
+
+      <div class="metric-card card card-hover">
+        <div class="metric-icon icon-phone">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+        </div>
+        <div class="metric-info">
+          <span class="metric-label">With Phone</span>
+          <strong id="metric-phones" class="metric-number">0</strong>
+        </div>
+      </div>
+    </section>
+
+    <!-- Results Data Table Section (with Scroll Reveal) -->
+    <section class="card leads-table-card scroll-reveal" aria-labelledby="heading-leads-table">
+      <div class="table-toolbar">
+        <div class="toolbar-left">
+          <h2 id="heading-leads-table" class="card-title">Extracted Leads</h2>
+          <!-- Filter Tabs -->
+          <div class="filter-tabs" role="tablist">
+            <button type="button" class="tab-btn active" data-filter="all">All (<span id="tab-count-all">0</span>)</button>
+            <button type="button" class="tab-btn" data-filter="hot">🔥 Hot (<span id="tab-count-hot">0</span>)</button>
+            <button type="button" class="tab-btn" data-filter="warm">⚡ Warm (<span id="tab-count-warm">0</span>)</button>
+            <button type="button" class="tab-btn" data-filter="has_email">✉️ Has Email (<span id="tab-count-email">0</span>)</button>
+          </div>
+        </div>
+
+        <div class="toolbar-right">
+          <!-- Live search input -->
+          <div class="search-input-wrapper">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <input type="text" id="input-table-search" placeholder="Search by name, email, phone..." autocomplete="off">
+          </div>
+
+          <!-- Supabase Sync Button -->
+          <button type="button" id="btn-sync-supabase" class="btn btn-secondary" title="Sync leads to Supabase table">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
+            <span>Sync to Supabase</span>
+          </button>
+
+          <!-- Export Dropdown -->
+          <div class="export-dropdown">
+            <button type="button" id="btn-export-dropdown" class="btn btn-secondary">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span>Export Leads</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            <div id="export-menu" class="dropdown-menu is-hidden">
+              <button type="button" class="dropdown-item" data-export-fmt="csv">
+                <strong>Clean CSV</strong>
+                <small>Complete columns &amp; lead scores</small>
+              </button>
+              <button type="button" class="dropdown-item" data-export-fmt="crm">
+                <strong>CRM &amp; Outreach CSV</strong>
+                <small>Formatted for Instantly, Smartlead, HubSpot</small>
+              </button>
+              <button type="button" class="dropdown-item" data-export-fmt="json">
+                <strong>JSON Array</strong>
+                <small>Raw structured lead objects</small>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mobile Table Swipe Hint -->
+      <div class="mobile-table-hint">⟷ Swipe table horizontally to view phone, emails, and ratings</div>
+
+      <!-- Table Container -->
+      <div class="table-container">
+        <table id="leads-table" class="data-table" aria-label="Business leads list">
+          <thead>
+            <tr>
+              <th scope="col" class="th-score" data-sort="score">Score <span class="sort-arrow">↕</span></th>
+              <th scope="col" class="th-title" data-sort="title">Company / Business <span class="sort-arrow">↕</span></th>
+              <th scope="col" class="th-contact">Direct Contact</th>
+              <th scope="col" class="th-website">Website &amp; Domain</th>
+              <th scope="col" class="th-rating" data-sort="rating">Rating <span class="sort-arrow">↕</span></th>
+              <th scope="col" class="th-address">Location</th>
+              <th scope="col" class="th-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="leads-table-body">
+            <!-- Rendered dynamically by app.js -->
+            <tr class="empty-state-row">
+              <td colspan="7">
+                <div class="empty-state">
+                  <div class="empty-state-icon">🗺️</div>
+                  <h3>No Leads Loaded Yet</h3>
+                  <p>Launch an extraction above or select a past scrape from History to view and export verified business leads.</p>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-footer">
+        <span id="table-showing-text" class="table-info">Showing 0 leads</span>
+        <div id="table-pagination" class="pagination-controls is-hidden">
+          <button type="button" id="btn-page-prev" class="btn btn-sm btn-ghost">Previous</button>
+          <span id="page-indicator">Page 1</span>
+          <button type="button" id="btn-page-next" class="btn btn-sm btn-ghost">Next</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- History Slide-over Drawer -->
+  <aside id="history-drawer" class="drawer is-closed" aria-label="Scraping history">
+    <div class="drawer-header">
+      <div class="drawer-title-group">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        <h3>Scrape Archives</h3>
+      </div>
+      <button type="button" id="btn-close-drawer" class="btn-close-icon" aria-label="Close history drawer">✕</button>
+    </div>
+    <div class="drawer-body">
+      <div id="history-list" class="history-list">
+        <div class="empty-history">Loading archives...</div>
+      </div>
+    </div>
+  </aside>
+  <div id="drawer-backdrop" class="drawer-backdrop is-closed"></div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- Supabase Settings Modal -->
+  <div id="modal-supabase" class="modal-backdrop is-hidden" aria-modal="true" role="dialog" aria-labelledby="modal-supabase-title">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="brand-icon modal-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
+          </div>
+          <div>
+            <h3 id="modal-supabase-title" class="card-title">Supabase Cloud Integration</h3>
+            <p class="card-desc">Automatically store, deduplicate, and query leads in your Supabase PostgreSQL database.</p>
+          </div>
+        </div>
+        <button type="button" id="btn-close-supabase-modal" class="btn-close-icon" aria-label="Close modal">✕</button>
+      </div>
+
+      <form id="form-supabase-config" class="modal-body">
+        <div class="form-group">
+          <label for="input-supabase-url" class="form-label">Supabase Project URL</label>
+          <input type="url" id="input-supabase-url" class="form-input" placeholder="https://xxxxxxxx.supabase.co" required autocomplete="off">
+          <small class="field-hint">Found in Supabase Dashboard ➜ Project Settings ➜ API</small>
+        </div>
+
+        <div class="form-group">
+          <label for="input-supabase-key" class="form-label">Supabase API Key (anon / public or service_role)</label>
+          <input type="password" id="input-supabase-key" class="form-input" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI..." required autocomplete="off">
+          <small class="field-hint">Found in Project Settings ➜ API ➜ Project API keys</small>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="input-supabase-table" class="form-label">Table Name</label>
+            <input type="text" id="input-supabase-table" class="form-input" value="leads" required autocomplete="off">
+          </div>
+          <div class="form-group flex-1 flex-center">
+            <label class="toggle-control" for="toggle-supabase-auto">
+              <input type="checkbox" id="toggle-supabase-auto" checked>
+              <span class="toggle-switch"></span>
+              <span class="toggle-text">
+                <strong>Auto-Sync on Scrape</strong>
+                <small>Push new leads automatically</small>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div class="sql-hint-box">
+          <div class="sql-hint-header">
+            <strong>📋 Database Schema Required</strong>
+            <button type="button" id="btn-copy-sql" class="btn btn-sm btn-ghost">Copy SQL</button>
+          </div>
+          <p>Run <code>supabase_schema.sql</code> in your Supabase SQL Editor to create the <code>leads</code> table.</p>
+        </div>
+
+        <div id="supabase-test-feedback" class="status-alert is-hidden"></div>
+
+        <div class="modal-footer">
+          <button type="button" id="btn-disconnect-supabase" class="btn btn-ghost text-muted" title="Clear cloud credentials and use built-in local database">Revert to Local DB</button>
+          <div class="modal-footer-actions">
+            <button type="button" id="btn-test-supabase" class="btn btn-secondary">Test Connection</button>
+            <button type="submit" id="btn-save-supabase" class="btn btn-primary">Save &amp; Connect</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="anime.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

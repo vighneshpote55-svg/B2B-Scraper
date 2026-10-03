@@ -12,12 +12,11 @@ services:
     # (1.57.0) 404s on Microsoft's CDN (old driver builds get purged). v1.18.1 ships
     # a driver version still hosted.
     image: gosom/google-maps-scraper:v1.18.1
-    # platform: linux/amd64
     container_name: gmaps-scraper
     restart: unless-stopped
-    command: ["-web", "-data-folder", "/gmapsdata"]
+    command: ["-web", "-data-folder", "/gmapsdata", "-exit-on-inactivity", "15m", "-c", "4"]
     ports:
-      - "127.0.0.1:8080:8080"   # localhost only — see warning above
+      - "127.0.0.1:${SCRAPER_PORT:-8085}:8080"   # localhost only — configurable via SCRAPER_PORT (defaults to 8085)
     volumes:
       - gmaps_data:/gmapsdata    # job results persist here
       - gmaps_cache:/opt         # Playwright browser cache (faster restarts)

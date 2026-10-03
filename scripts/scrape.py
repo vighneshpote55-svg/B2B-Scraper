@@ -18,6 +18,30 @@ Notes:
 import argparse, csv, io, json, os, re, sys, time, urllib.request, urllib.parse, urllib.error
 from concurrent.futures import ThreadPoolExecutor
 
+# Auto-load .env from repository root if present
+_env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+if os.path.isfile(_env_path):
+    with open(_env_path) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _v = _line.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip())
+
+# Include project root in sys.path for cleanser import
+_repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
+
+try:
+    from scripts.cleanser import clean_lead, deduplicate_leads
+except ImportError:
+    try:
+        from cleanser import clean_lead, deduplicate_leads
+    except ImportError:
+        clean_lead = lambda x: x
+        deduplicate_leads = lambda x: x
+
 BASE = os.environ.get("SCRAPER_BASE_URL", "http://localhost:8080")
 KEY = os.environ.get("SCRAPER_API_KEY", "")
 # Money-useful LEAD fields only — what you actually use to contact/qualify a lead.
@@ -144,6 +168,12 @@ def main():
     ap.add_argument("--fields", help="comma-separated columns to keep (overrides the default lead set)")
     ap.add_argument("--socials", action="store_true",
                     help="also find Instagram/Facebook/LinkedIn from each website (0 LLM tokens; slower)")
+    ap.add_argument("--no-clean", dest="clean", action="store_false", default=True,
+                    help="disable automatic lead cleansing (smart email filtering, phone formatting, deduplication)")
+    ap.add_argument("--score", dest="score", action="store_true", default=True,
+                    help="include lead scoring (0-100) and tier (HOT/WARM/COLD) in output (default: ON)")
+    ap.add_argument("--no-score", dest="score", action="store_false",
+                    help="disable lead scoring columns")
     a = ap.parse_args()
 
     keywords = collect_keywords(a)
@@ -227,6 +257,21 @@ def main():
         found = sum(1 for r in results if r.get("instagram") or r.get("facebook") or r.get("linkedin"))
         print(f"  socials found for {found}/{len(results)} businesses")
 
+    if a.clean:
+        print("▶ Cleansing lead data (filtering bot emails, formatting phones, deduplicating)…")
+        results = [clean_lead(r) for r in results]
+        before_count = len(results)
+        results = deduplicate_leads(results)
+        if len(results) < before_count:
+            print(f"  removed {before_count - len(results)} duplicate business listing(s)")
+
+    if a.score and a.clean:
+        if "lead_tier" not in fields:
+            fields = ["lead_tier", "lead_score"] + [f for f in fields if f not in ("lead_tier", "lead_score")]
+        hot_count = sum(1 for r in results if r.get("lead_tier") == "HOT")
+        warm_count = sum(1 for r in results if r.get("lead_tier") == "WARM")
+        print(f"  lead quality breakdown: {hot_count} HOT 🔥 | {warm_count} WARM ⚡ | {len(results) - hot_count - warm_count} COLD ❄️")
+
     # Default output is a CSV file (opens in Excel / Google Sheets). Use --json (or a .json --out path) for JSON.
     as_json = a.json or (a.out and a.out.lower().endswith(".json"))
     out = a.out or f"results-{job_id[:8]}.{'json' if as_json else 'csv'}"
@@ -235,13 +280,27 @@ def main():
             json.dump(results, f, indent=2, ensure_ascii=False)
     else:
         with open(out, "w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=fields)
+            w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
             w.writeheader()
             w.writerows(results)
     print(f"  saved → {out}")
     for r in results[:5]:
+        score_tag = f"[{r.get('lead_tier','')} {r.get('lead_score','')}] " if a.score and a.clean else ""
         tail = f" | IG:{r.get('instagram','') or '—'}" if a.socials else f" | {r.get('website','')}"
-        print(f"  • {r.get('title','')} | {r.get('phone','')} | {r.get('emails','')}{tail}")
+        print(f"  • {score_tag}{r.get('title','')} | {r.get('phone','')} | {r.get('emails','')}{tail}")
+
+    # Automatic Supabase sync if credentials exist in .env
+    try:
+        from scripts.supabase_client import is_configured as is_sb_ready, sync_leads as sb_sync
+        if is_sb_ready():
+            print("▶ Syncing qualified leads to Supabase Cloud...")
+            sb_res = sb_sync(results, job_id=job_id)
+            if sb_res.get("success"):
+                print(f"  ✔ {sb_res.get('message')}")
+            else:
+                print(f"  ✗ Supabase sync error: {sb_res.get('error')}", file=sys.stderr)
+    except Exception as e:
+        pass
 
 
 if __name__ == "__main__":
