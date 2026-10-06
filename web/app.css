@@ -3313,18 +3313,8 @@ img, svg, canvas, video {
   }
 }
 
-/* ── Respect reduced-motion preferences ────────────────────────────────────── */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-
-  .glass-orb,
-  .marquee-track {
-    animation: none !important;
-  }
+/* ── Ensure Marquee Continuous Horizontal Motion ───────────────────────────── */
+.marquee-track {
+  animation: marqueeContinuous 30s linear infinite !important;
 }
 
