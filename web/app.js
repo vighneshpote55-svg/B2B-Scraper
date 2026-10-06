@@ -2208,26 +2208,93 @@ CREATE POLICY "Allow anon read and write on scrape_history" ON public.scrape_his
     let currentUser = null;
     let authToken = localStorage.getItem('leadmap_auth_token') || '';
 
-    // Animate Auth Gate Entrance
+    // Interactive Starfield / Floating Particle Canvas for Auth Screen
+    function initAuthParticleCanvas() {
+      const pCanvas = document.getElementById('auth-particle-canvas');
+      if (!pCanvas) return;
+      const ctx = pCanvas.getContext('2d');
+      let width = (pCanvas.width = window.innerWidth);
+      let height = (pCanvas.height = window.innerHeight);
+
+      window.addEventListener('resize', () => {
+        width = pCanvas.width = window.innerWidth;
+        height = pCanvas.height = window.innerHeight;
+      });
+
+      const particles = Array.from({ length: 45 }, () => ({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        r: Math.random() * 2 + 1,
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: (Math.random() - 0.5) * 0.4,
+        alpha: Math.random() * 0.5 + 0.2
+      }));
+
+      function renderParticles() {
+        ctx.clearRect(0, 0, width, height);
+        particles.forEach(p => {
+          p.x += p.vx;
+          p.y += p.vy;
+          if (p.x < 0) p.x = width;
+          if (p.x > width) p.x = 0;
+          if (p.y < 0) p.y = height;
+          if (p.y > height) p.y = 0;
+
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(99, 102, 241, ${p.alpha})`;
+          ctx.fill();
+        });
+        requestAnimationFrame(renderParticles);
+      }
+      renderParticles();
+    }
+
+    // Animate Auth Gate Entrance with Stagger & Anime.js
     function animateGateEntrance() {
+      initAuthParticleCanvas();
       const gateCard = document.querySelector('.auth-gate-card');
+      const showcasePanel = document.querySelector('.auth-showcase-panel');
+      const featureItems = document.querySelectorAll('.showcase-feature-item');
       const gateBrandIcon = document.querySelector('.gate-brand-icon');
+
+      if (showcasePanel) {
+        runAnimation(showcasePanel, {
+          opacity: [0, 1],
+          translateX: [-30, 0],
+          duration: 650,
+          ease: 'outCubic'
+        });
+      }
+
+      if (featureItems.length > 0) {
+        runAnimation(Array.from(featureItems), {
+          opacity: [0, 1],
+          translateX: [-20, 0],
+          duration: 500,
+          delay: (el, i) => 200 + i * 100,
+          ease: 'outBack(1.2)'
+        });
+      }
+
       if (gateCard) {
         runAnimation(gateCard, {
           opacity: [0, 1],
-          translateY: [35, 0],
-          scale: [0.92, 1],
-          duration: 650,
-          ease: 'outBack(1.4)'
+          translateY: [40, 0],
+          scale: [0.9, 1],
+          duration: 700,
+          delay: 100,
+          ease: 'outBack(1.5)'
         });
       }
+
       if (gateBrandIcon) {
         runAnimation(gateBrandIcon, {
-          scale: [0.6, 1],
-          rotate: [-15, 0],
-          duration: 500,
-          delay: 150,
-          ease: 'outBack(1.8)'
+          scale: [0.5, 1],
+          rotate: [-20, 0],
+          duration: 550,
+          delay: 250,
+          ease: 'outBack(2)'
         });
       }
     }
