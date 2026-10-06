@@ -5,30 +5,31 @@
 
 /* ── 1. Design Tokens & Theme Variables ───────────────────────────────────── */
 :root {
-  /* Dark Theme (Default) */
-  --bg-app: #090d16;
-  --bg-header: rgba(11, 16, 28, 0.88);
-  --bg-card: rgba(17, 24, 39, 0.75);
-  --bg-card-solid: #111827;
-  --bg-surface: #1e293b;
-  --bg-input: rgba(15, 23, 42, 0.75);
-  --bg-input-focus: rgba(15, 23, 42, 0.95);
-  --bg-tab: rgba(15, 23, 42, 0.75);
-  --bg-tab-active: #1e293b;
-  --bg-chip: rgba(255, 255, 255, 0.05);
-  --bg-chip-hover: rgba(99, 102, 241, 0.15);
-  --bg-table-th: rgba(15, 23, 42, 0.95);
-  --bg-table-hover: rgba(255, 255, 255, 0.035);
-  --bg-modal: #111827;
-  --bg-drawer: #0f172a;
-  --bg-dropdown: #111827;
+  /* Cyber Neon Frost Glass Theme (Default) */
+  --bg-app: #060a14;
+  --bg-header: rgba(10, 16, 32, 0.72);
+  --bg-card: rgba(15, 23, 42, 0.65);
+  --bg-card-solid: #0f172a;
+  --bg-surface: rgba(30, 41, 59, 0.55);
+  --bg-input: rgba(15, 23, 42, 0.55);
+  --bg-input-focus: rgba(15, 23, 42, 0.85);
+  --bg-tab: rgba(15, 23, 42, 0.65);
+  --bg-tab-active: rgba(30, 41, 59, 0.85);
+  --bg-chip: rgba(255, 255, 255, 0.06);
+  --bg-chip-hover: rgba(99, 102, 241, 0.22);
+  --bg-table-th: rgba(15, 23, 42, 0.85);
+  --bg-table-hover: rgba(255, 255, 255, 0.045);
+  --bg-modal: rgba(15, 23, 42, 0.82);
+  --bg-drawer: rgba(10, 16, 32, 0.85);
+  --bg-dropdown: rgba(15, 23, 42, 0.9);
 
-  /* Borders */
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-card: rgba(255, 255, 255, 0.08);
-  --border-input: rgba(255, 255, 255, 0.14);
-  --border-focus: #6366f1;
-  --border-table: rgba(255, 255, 255, 0.06);
+  /* Glass Specular Borders */
+  --border-subtle: rgba(255, 255, 255, 0.1);
+  --border-card: rgba(255, 255, 255, 0.12);
+  --border-card-specular: rgba(255, 255, 255, 0.25);
+  --border-input: rgba(255, 255, 255, 0.16);
+  --border-focus: #818cf8;
+  --border-table: rgba(255, 255, 255, 0.08);
 
   /* Typography Colors */
   --text-primary: #f8fafc;
@@ -46,21 +47,21 @@
 
   /* Status Badges */
   --color-hot: #f43f5e;
-  --color-hot-bg: rgba(244, 63, 94, 0.15);
+  --color-hot-bg: rgba(244, 63, 94, 0.18);
   --color-warm: #f59e0b;
-  --color-warm-bg: rgba(245, 158, 11, 0.15);
+  --color-warm-bg: rgba(245, 158, 11, 0.18);
   --color-cold: #38bdf8;
-  --color-cold-bg: rgba(56, 189, 248, 0.12);
+  --color-cold-bg: rgba(56, 189, 248, 0.14);
   --color-success: #10b981;
-  --color-success-bg: rgba(16, 185, 129, 0.15);
+  --color-success-bg: rgba(16, 185, 129, 0.18);
   --color-error: #ef4444;
-  --color-error-bg: rgba(239, 68, 68, 0.15);
+  --color-error-bg: rgba(239, 68, 68, 0.18);
 
-  /* Shadows */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 14px 32px rgba(0, 0, 0, 0.55);
-  --shadow-glow: 0 0 24px rgba(99, 102, 241, 0.35);
+  /* Shadows & Specular Inset Highlights */
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 10px 28px -4px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.16);
+  --shadow-lg: 0 20px 48px -8px rgba(0, 0, 0, 0.65), inset 0 1px 1.5px rgba(255, 255, 255, 0.22);
+  --shadow-glow: 0 0 28px rgba(99, 102, 241, 0.45);
 
   /* Typography */
   --font-heading: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -71,6 +72,69 @@
   --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   --radius-card: 16px;
   --radius-input: 10px;
+}
+
+/* ── Ambient Neon Glow Orbs ───────────────────────────────────────────────── */
+.glass-ambient-orbs {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.glass-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(95px);
+  opacity: 0.45;
+  will-change: transform;
+  animation: floatGlassOrb 24s ease-in-out infinite alternate;
+}
+
+[data-theme="light"] .glass-ambient-orbs {
+  opacity: 0.18;
+}
+
+.orb-purple {
+  width: 580px;
+  height: 580px;
+  background: radial-gradient(circle, #8b5cf6 0%, rgba(139, 92, 246, 0.12) 65%, transparent 100%);
+  top: -140px;
+  left: 12%;
+  animation-duration: 26s;
+}
+
+.orb-cyan {
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, #06b6d4 0%, rgba(6, 182, 212, 0.12) 65%, transparent 100%);
+  top: 36%;
+  right: 6%;
+  animation-duration: 28s;
+  animation-delay: -8s;
+}
+
+.orb-indigo {
+  width: 540px;
+  height: 540px;
+  background: radial-gradient(circle, #6366f1 0%, rgba(99, 102, 241, 0.1) 65%, transparent 100%);
+  bottom: 6%;
+  left: 22%;
+  animation-duration: 32s;
+  animation-delay: -16s;
+}
+
+@keyframes floatGlassOrb {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(45px, 35px, 0) scale(1.08);
+  }
+  100% {
+    transform: translate3d(-35px, 50px, 0) scale(0.95);
+  }
 }
 
 /* ── Light Mode Palette Override ──────────────────────────────────────────── */
