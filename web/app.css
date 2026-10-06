@@ -140,6 +140,90 @@
   }
 }
 
+/* ── Monochrome (Black & White High-Contrast) Theme ──────────────────────── */
+[data-theme="mono"] {
+  --bg-app: #000000;
+  --bg-header: #0a0a0a;
+  --bg-card: #121212;
+  --bg-card-solid: #171717;
+  --bg-surface: #1e1e1e;
+  --bg-input: #171717;
+  --bg-input-focus: #262626;
+  --bg-tab: #171717;
+  --bg-tab-active: #262626;
+  --bg-chip: #1e1e1e;
+  --bg-chip-hover: #333333;
+  --bg-table-th: #171717;
+  --bg-table-hover: #1f1f1f;
+  --bg-modal: #121212;
+  --bg-drawer: #0a0a0a;
+  --bg-dropdown: #171717;
+  --bg-hover: #262626;
+  --card-bg: var(--bg-card);
+
+  --border-color: #333333;
+  --border-subtle: #262626;
+  --border-card: #333333;
+  --border-card-specular: #525252;
+  --border-input: #404040;
+  --border-focus: #ffffff;
+  --border-table: #262626;
+
+  --text-primary: #ffffff;
+  --text-secondary: #d4d4d4;
+  --text-muted: #a3a3a3;
+  --text-title: #ffffff;
+  --text-table-head: #e5e5e5;
+
+  --accent-indigo: #ffffff;
+  --accent-violet: #e5e5e5;
+  --accent-cyan: #d4d4d4;
+  --accent-gradient: linear-gradient(135deg, #ffffff 0%, #a3a3a3 100%);
+  --accent-gradient-hover: linear-gradient(135deg, #e5e5e5 0%, #737373 100%);
+
+  --color-hot: #ffffff;
+  --color-hot-bg: #262626;
+  --color-warm: #d4d4d4;
+  --color-warm-bg: #1e1e1e;
+  --color-cold: #a3a3a3;
+  --color-cold-bg: #171717;
+  --color-success: #ffffff;
+  --color-success-bg: #262626;
+  --color-error: #e5e5e5;
+  --color-error-bg: #262626;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.9);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.9);
+  --shadow-lg: 0 14px 32px rgba(0, 0, 0, 0.95);
+  --shadow-glow: 0 0 20px rgba(255, 255, 255, 0.2);
+}
+
+[data-theme="mono"] .glass-ambient-orbs,
+[data-theme="mono"] .auth-gate-background-orbs {
+  display: none !important;
+}
+
+[data-theme="mono"] .auth-gate-overlay {
+  background: #000000 !important;
+}
+
+[data-theme="mono"] .auth-gate-card {
+  background: #0d0d0d !important;
+  border: 1px solid #333333 !important;
+  box-shadow: 0 0 30px rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="mono"] .btn-glow {
+  background: #ffffff !important;
+  color: #000000 !important;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.3) !important;
+}
+
+[data-theme="mono"] .btn-glow:hover {
+  background: #e5e5e5 !important;
+  box-shadow: 0 0 30px rgba(255, 255, 255, 0.5) !important;
+}
+
 /* ── Light Mode Palette Override ──────────────────────────────────────────── */
 [data-theme="light"] {
   --bg-app: #f1f5f9;
