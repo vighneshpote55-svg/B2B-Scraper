@@ -734,9 +734,12 @@
       const data = await res.json();
       const jobs = data.jobs || [];
       if (jobs.length > 0) {
-        const latestJob = jobs[0];
-        currentJobId = latestJob.id;
-        await loadJobLeads(currentJobId);
+        // Pick the most recent scrape job that actually contains extracted leads
+        const validJob = jobs.find(j => (j.metrics && j.metrics.total > 0)) || jobs[0];
+        if (validJob && validJob.id) {
+          currentJobId = validJob.id;
+          await loadJobLeads(currentJobId);
+        }
       }
     } catch (err) {
       console.warn('Could not auto-load initial job:', err);

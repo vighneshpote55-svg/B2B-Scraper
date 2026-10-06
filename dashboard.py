@@ -548,6 +548,11 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                     with open(saved_file) as f:
                         d = json.load(f)
                         leads = d.get("leads", [])
+                elif is_supabase_configured():
+                    try:
+                        leads = fetch_leads_for_job_from_supabase(job_id)
+                    except Exception as sbe:
+                        print(f"[Supabase fetch leads error] {sbe}")
 
             self._send_json({"job_id": job_id, "leads": leads, "count": len(leads)})
             return
