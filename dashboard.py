@@ -836,9 +836,138 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             }
             _save_sessions(sessions)
 
+            # Record login timestamp in database if Supabase is active
+            user["last_login_at"] = time.time()
+            users[email] = user
+            _save_users(users)
+            if is_supabase_configured():
+                try:
+                    save_user_to_supabase(user)
+                except Exception as sbe:
+                    print(f"[Supabase sync login error] {sbe}")
+
             self._send_json({
                 "success": True,
                 "message": f"Welcome back, {user.get('name')}!",
+                "token": token,
+                "user": {
+                    "id": user.get("id"),
+                    "name": user.get("name"),
+                    "email": user.get("email")
+                }
+            })
+            return
+
+        if path == "/api/auth/forgot-password":
+            content_length = int(self.headers.get("Content-Length", 0))
+            body_bytes = self.rfile.read(content_length)
+            try:
+                params = json.loads(body_bytes.decode("utf-8"))
+            except Exception:
+                self._send_json({"error": "Invalid JSON payload"}, 400)
+                return
+
+            email = params.get("email", "").strip().lower()
+            new_password = params.get("new_password", "").strip()
+
+            if not email or "@" not in email:
+                self._send_json({"error": "Please enter a valid work email address."}, 400)
+                return
+
+            users = _load_users()
+            user = users.get(email)
+            if not user and is_supabase_configured():
+                user = get_user_from_supabase_by_email(email)
+
+            if not user:
+                self._send_json({"error": "No account found with this email address."}, 404)
+                return
+
+            if new_password:
+                if len(new_password) < 8:
+                    self._send_json({"error": "New password must be at least 8 characters long."}, 400)
+                    return
+                user["password_hash"] = _hash_password(new_password)
+                user["updated_at"] = time.time()
+                users[email] = user
+                _save_users(users)
+                if is_supabase_configured():
+                    try:
+                        save_user_to_supabase(user)
+                    except Exception as sbe:
+                        print(f"[Supabase password update error] {sbe}")
+                self._send_json({"success": True, "message": "Password updated successfully! You can now sign in."})
+                return
+
+            # Password reset link simulation
+            reset_token = secrets.token_hex(16)
+            self._send_json({
+                "success": True,
+                "message": f"Password reset instructions have been generated for {email}.",
+                "reset_token": reset_token
+            })
+            return
+
+        if path == "/api/auth/google":
+            content_length = int(self.headers.get("Content-Length", 0))
+            body_bytes = self.rfile.read(content_length)
+            try:
+                params = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
+            except Exception:
+                params = {}
+
+            email = params.get("email", "").strip().lower()
+            name = params.get("name", "").strip()
+            
+            # Default / simulated Google profile if prompt used
+            if not email:
+                email = "user.google@leadmappro.io"
+                name = "Google User"
+
+            users = _load_users()
+            user = users.get(email)
+
+            if not user:
+                user_id = secrets.token_hex(8)
+                user = {
+                    "id": user_id,
+                    "name": name or email.split("@")[0].capitalize(),
+                    "email": email,
+                    "auth_provider": "google",
+                    "password_hash": _hash_password(secrets.token_hex(16)),
+                    "created_at": time.time(),
+                    "last_login_at": time.time()
+                }
+                users[email] = user
+                _save_users(users)
+                if is_supabase_configured():
+                    try:
+                        save_user_to_supabase(user)
+                    except Exception as sbe:
+                        print(f"[Supabase sync Google user error] {sbe}")
+            else:
+                user["last_login_at"] = time.time()
+                users[email] = user
+                _save_users(users)
+                if is_supabase_configured():
+                    try:
+                        save_user_to_supabase(user)
+                    except Exception as sbe:
+                        print(f"[Supabase sync Google login error] {sbe}")
+
+            token = secrets.token_hex(24)
+            sessions = _load_sessions()
+            sessions[token] = {
+                "email": email,
+                "user_id": user.get("id"),
+                "auth_provider": "google",
+                "created_at": time.time()
+            }
+            _save_sessions(sessions)
+
+            self._send_json({
+                "success": True,
+                "message": f"Signed in with Google as {user.get('email')}!",
                 "token": token,
                 "user": {
                     "id": user.get("id"),

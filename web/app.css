@@ -4695,10 +4695,56 @@ img, svg, canvas, video {
   color: #a5b4fc;
 }
 
+/* Responsive Breakpoints & Device Optimization */
+@media (max-height: 820px) {
+  .auth-gate-overlay {
+    padding: 0 2rem 1.5rem 2rem !important;
+  }
+  .gate-top-bar {
+    padding: 0.85rem 0 0.5rem 0;
+  }
+  .gate-logo-mark.large {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 0.5rem;
+  }
+  .mockup-card-right {
+    padding: 1.75rem 1.85rem !important;
+  }
+  .mockup-hero-title {
+    font-size: 2.15rem;
+  }
+  .mockup-map-container {
+    height: 280px;
+  }
+  .mockup-form {
+    gap: 0.85rem;
+  }
+}
+
+@media (max-width: 1200px) {
+  .mockup-hero-layout {
+    gap: 2.25rem !important;
+    grid-template-columns: 1.15fr 0.95fr !important;
+  }
+  .mockup-hero-title {
+    font-size: 2.3rem;
+  }
+  .mockup-card-right {
+    max-width: 420px !important;
+    padding: 2.25rem 2rem !important;
+  }
+}
+
 @media (max-width: 1024px) {
+  .auth-gate-overlay {
+    padding: 0 1.5rem 2rem 1.5rem !important;
+  }
   .mockup-hero-layout {
     grid-template-columns: 1fr !important;
     gap: 2rem !important;
+    max-width: 520px !important;
+    margin: 1rem auto !important;
   }
   .mockup-panel-left {
     order: 2;
@@ -4706,23 +4752,48 @@ img, svg, canvas, video {
   .mockup-card-right {
     order: 1;
     margin: 0 auto !important;
+    max-width: 100% !important;
   }
   .gate-top-bar {
     padding: 1rem 0;
+  }
+  .gate-top-right {
+    display: none;
   }
 }
 
 @media (max-width: 640px) {
   .auth-gate-overlay {
-    padding: 0 1.25rem 2rem 1.25rem !important;
+    padding: 0 1rem 1.5rem 1rem !important;
   }
   .mockup-card-right {
-    padding: 2rem 1.5rem !important;
+    padding: 1.75rem 1.25rem !important;
+    border-radius: 20px !important;
+  }
+  .mockup-card-brand h2 {
+    font-size: 1.65rem;
+  }
+  .mockup-hero-title {
+    font-size: 1.85rem;
   }
   .mockup-trust-row {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.5rem;
+  }
+  .mockup-map-container {
+    height: 240px;
+  }
+  .floating-lead-card {
+    width: 145px;
+    padding: 0.45rem 0.55rem;
+  }
+  .card-thumb {
+    width: 28px;
+    height: 28px;
+  }
+  .card-details strong {
+    font-size: 0.7rem;
   }
 }
 

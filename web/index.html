@@ -136,12 +136,48 @@
         </div>
 
         <div class="mockup-card-title-group">
-          <h3 id="gate-auth-title">Create your account</h3>
-          <p id="gate-auth-sub">Start discovering and converting better leads today.</p>
+          <h3 id="gate-auth-title">Welcome back</h3>
+          <p id="gate-auth-sub">Sign in to your account to continue.</p>
         </div>
 
-        <!-- Create Account / Register Form (Default View) -->
-        <form id="gate-form-register" class="auth-form-body gate-form mockup-form">
+        <!-- Sign In / Login Form (Default View) -->
+        <form id="gate-form-login" class="auth-form-body gate-form mockup-form">
+          <div class="form-group">
+            <label for="gate-login-email" class="mockup-label">Work Email</label>
+            <div class="input-with-icon icon-inside">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+              <input type="email" id="gate-login-email" class="form-input mockup-input" placeholder="you@company.com" required autocomplete="email">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="gate-login-password" class="mockup-label">Password</label>
+            <div class="input-with-icon icon-inside">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+              <input type="password" id="gate-login-password" class="form-input mockup-input" placeholder="Enter your password" required autocomplete="current-password">
+              <button type="button" class="btn-password-toggle" data-target="gate-login-password" aria-label="Toggle password visibility">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="mockup-form-options">
+            <label class="remember-me-toggle">
+              <input type="checkbox" id="gate-remember-me" checked>
+              <span>Remember me</span>
+            </label>
+            <a href="#" id="link-forgot-pass" class="forgot-pass-link">Forgot password?</a>
+          </div>
+
+          <div id="gate-login-feedback" class="status-alert is-hidden"></div>
+
+          <button type="submit" id="btn-gate-submit-login" class="btn btn-primary w-full btn-lg mockup-submit-btn">
+            <span>Sign In →</span>
+          </button>
+        </form>
+
+        <!-- Create Account / Register Form (Swapped via Mode Toggle) -->
+        <form id="gate-form-register" class="auth-form-body gate-form mockup-form is-hidden">
           <div class="form-group">
             <label for="gate-register-name" class="mockup-label">Full Name</label>
             <div class="input-with-icon icon-inside">
@@ -205,40 +241,36 @@
           </button>
         </form>
 
-        <!-- Sign In / Login Form (Swapped via Mode Toggle) -->
-        <form id="gate-form-login" class="auth-form-body gate-form mockup-form is-hidden">
+        <!-- Forgot Password Form (Swapped via Forgot Password link) -->
+        <form id="gate-form-forgot" class="auth-form-body gate-form mockup-form is-hidden">
           <div class="form-group">
-            <label for="gate-login-email" class="mockup-label">Work Email</label>
+            <label for="gate-forgot-email" class="mockup-label">Work Email</label>
             <div class="input-with-icon icon-inside">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
-              <input type="email" id="gate-login-email" class="form-input mockup-input" placeholder="you@company.com" required autocomplete="email">
+              <input type="email" id="gate-forgot-email" class="form-input mockup-input" placeholder="you@company.com" required autocomplete="email">
             </div>
           </div>
 
           <div class="form-group">
-            <label for="gate-login-password" class="mockup-label">Password</label>
+            <label for="gate-forgot-new-password" class="mockup-label">New Password</label>
             <div class="input-with-icon icon-inside">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-              <input type="password" id="gate-login-password" class="form-input mockup-input" placeholder="Enter your password" required autocomplete="current-password">
-              <button type="button" class="btn-password-toggle" data-target="gate-login-password" aria-label="Toggle password visibility">
+              <input type="password" id="gate-forgot-new-password" class="form-input mockup-input" placeholder="Enter new password (min 8 chars)" required minlength="8" autocomplete="new-password">
+              <button type="button" class="btn-password-toggle" data-target="gate-forgot-new-password" aria-label="Toggle password visibility">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
               </button>
             </div>
           </div>
 
-          <div class="mockup-form-options">
-            <label class="remember-me-toggle">
-              <input type="checkbox" id="gate-remember-me" checked>
-              <span>Remember me</span>
-            </label>
-            <a href="#" id="link-forgot-pass" class="forgot-pass-link">Forgot password?</a>
-          </div>
+          <div id="gate-forgot-feedback" class="status-alert is-hidden"></div>
 
-          <div id="gate-login-feedback" class="status-alert is-hidden"></div>
-
-          <button type="submit" id="btn-gate-submit-login" class="btn btn-primary w-full btn-lg mockup-submit-btn">
-            <span>Sign In →</span>
+          <button type="submit" id="btn-gate-submit-forgot" class="btn btn-primary w-full btn-lg mockup-submit-btn">
+            <span>Reset Password &amp; Sign In →</span>
           </button>
+
+          <div class="text-center" style="text-align: center; margin-top: 0.25rem;">
+            <a href="#" id="link-back-to-login" class="link-switch" style="font-size: 0.84rem;">← Back to sign in</a>
+          </div>
         </form>
 
         <!-- Divider -->
@@ -259,8 +291,8 @@
 
         <!-- Bottom Mode Switcher -->
         <div class="mockup-switch-mode">
-          <span id="auth-mode-prompt-text">Already have an account?</span>
-          <button type="button" id="btn-toggle-auth-mode" class="link-switch">Sign in</button>
+          <span id="auth-mode-prompt-text">Don't have an account?</span>
+          <button type="button" id="btn-toggle-auth-mode" class="link-switch">Create account</button>
         </div>
       </div>
     </div>

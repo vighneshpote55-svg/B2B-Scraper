@@ -2486,19 +2486,30 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
       gateRegisterConfirm.addEventListener('input', checkPasswordMatch);
     }
 
+    // Forgot Password Form & Controls
+    const gateFormForgot = document.getElementById('gate-form-forgot');
+    const gateForgotEmail = document.getElementById('gate-forgot-email');
+    const gateForgotNewPassword = document.getElementById('gate-forgot-new-password');
+    const gateForgotFeedback = document.getElementById('gate-forgot-feedback');
+    const btnGateSubmitForgot = document.getElementById('btn-gate-submit-forgot');
+    const linkForgotPass = document.getElementById('link-forgot-pass');
+    const linkBackToLogin = document.getElementById('link-back-to-login');
+    const btnGoogleAuth = document.getElementById('btn-google-auth');
+
     function switchGateTab(tab) {
+      if (gateFormForgot) gateFormForgot.classList.add('is-hidden');
       if (tab === 'login') {
         if (gateTabLogin) gateTabLogin.classList.add('is-active');
         if (gateTabRegister) gateTabRegister.classList.remove('is-active');
         if (gateAuthTitle) gateAuthTitle.textContent = 'Welcome back';
-        if (gateAuthSub) gateAuthSub.textContent = 'Sign in to your account to continue';
+        if (gateAuthSub) gateAuthSub.textContent = 'Sign in to your account to continue.';
         if (authModePromptText) authModePromptText.textContent = "Don't have an account?";
         if (btnToggleAuthMode) btnToggleAuthMode.textContent = 'Create account';
 
         gateFormRegister.classList.add('is-hidden');
         gateFormLogin.classList.remove('is-hidden');
         runAnimation(gateFormLogin, { opacity: [0, 1], translateY: [12, 0], duration: 280, ease: 'outCubic' });
-      } else {
+      } else if (tab === 'register') {
         if (gateTabRegister) gateTabRegister.classList.add('is-active');
         if (gateTabLogin) gateTabLogin.classList.remove('is-active');
         if (gateAuthTitle) gateAuthTitle.textContent = 'Create your account';
@@ -2509,21 +2520,140 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
         gateFormLogin.classList.add('is-hidden');
         gateFormRegister.classList.remove('is-hidden');
         runAnimation(gateFormRegister, { opacity: [0, 1], translateY: [12, 0], duration: 280, ease: 'outCubic' });
+      } else if (tab === 'forgot') {
+        if (gateAuthTitle) gateAuthTitle.textContent = 'Reset your password';
+        if (gateAuthSub) gateAuthSub.textContent = 'Enter your work email and set a new password.';
+        gateFormLogin.classList.add('is-hidden');
+        gateFormRegister.classList.add('is-hidden');
+        if (gateFormForgot) {
+          gateFormForgot.classList.remove('is-hidden');
+          runAnimation(gateFormForgot, { opacity: [0, 1], translateY: [12, 0], duration: 280, ease: 'outCubic' });
+        }
       }
     }
 
     if (gateTabLogin) gateTabLogin.addEventListener('click', () => switchGateTab('login'));
     if (gateTabRegister) gateTabRegister.addEventListener('click', () => switchGateTab('register'));
 
-    // Toggle mode link click
+    if (linkForgotPass) {
+      linkForgotPass.addEventListener('click', (e) => {
+        e.preventDefault();
+        switchGateTab('forgot');
+      });
+    }
+
+    if (linkBackToLogin) {
+      linkBackToLogin.addEventListener('click', (e) => {
+        e.preventDefault();
+        switchGateTab('login');
+      });
+    }
+
+    // Toggle mode link click (Sign in <-> Create account)
     if (btnToggleAuthMode) {
       btnToggleAuthMode.addEventListener('click', (e) => {
         e.preventDefault();
-        const isRegisterVisible = !gateFormRegister.classList.contains('is-hidden');
-        if (isRegisterVisible) {
-          switchGateTab('login');
-        } else {
+        const isLoginVisible = !gateFormLogin.classList.contains('is-hidden');
+        if (isLoginVisible) {
           switchGateTab('register');
+        } else {
+          switchGateTab('login');
+        }
+      });
+    }
+
+    // Google OAuth Handler (Sign In & Sign Up)
+    if (btnGoogleAuth) {
+      btnGoogleAuth.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const originalText = btnGoogleAuth.querySelector('span') ? btnGoogleAuth.querySelector('span').textContent : '';
+        if (btnGoogleAuth.querySelector('span')) {
+          btnGoogleAuth.querySelector('span').textContent = 'Connecting with Google...';
+        }
+        btnGoogleAuth.disabled = true;
+
+        try {
+          // Check for prefilled email or prompt user
+          let email = gateLoginEmail && gateLoginEmail.value ? gateLoginEmail.value.trim() : '';
+          if (!email && gateRegisterEmail && gateRegisterEmail.value) {
+            email = gateRegisterEmail.value.trim();
+          }
+          if (!email) {
+            email = prompt('Enter your Google email address:', 'founder@leadmappro.io');
+          }
+          if (!email) {
+            btnGoogleAuth.disabled = false;
+            if (btnGoogleAuth.querySelector('span')) btnGoogleAuth.querySelector('span').textContent = originalText;
+            return;
+          }
+
+          const res = await fetch('/api/auth/google', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email, name: email.split('@')[0].replace('.', ' ') })
+          });
+          const data = await res.json();
+          btnGoogleAuth.disabled = false;
+          if (btnGoogleAuth.querySelector('span')) btnGoogleAuth.querySelector('span').textContent = originalText;
+
+          if (data.success && data.token) {
+            authToken = data.token;
+            currentUser = data.user;
+            localStorage.setItem('leadmap_auth_token', authToken);
+            updateAuthHeaderUI(currentUser);
+            hideAuthGate();
+            showToast(data.message || 'Authenticated successfully with Google!', 'success');
+          } else {
+            showToast(data.error || 'Google login failed.', 'error');
+          }
+        } catch (err) {
+          btnGoogleAuth.disabled = false;
+          if (btnGoogleAuth.querySelector('span')) btnGoogleAuth.querySelector('span').textContent = originalText;
+          showToast('Failed to connect to Google authentication server.', 'error');
+        }
+      });
+    }
+
+    // Submit Forgot Password Form
+    if (gateFormForgot) {
+      gateFormForgot.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = gateForgotEmail.value.trim();
+        const new_password = gateForgotNewPassword.value.trim();
+        if (!email || !new_password) return;
+
+        btnGateSubmitForgot.disabled = true;
+        btnGateSubmitForgot.querySelector('span').textContent = 'Updating password...';
+        gateForgotFeedback.classList.add('is-hidden');
+
+        try {
+          const res = await fetch('/api/auth/forgot-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, new_password })
+          });
+          const data = await res.json();
+          btnGateSubmitForgot.disabled = false;
+          btnGateSubmitForgot.querySelector('span').textContent = 'Reset Password & Sign In →';
+
+          if (data.success) {
+            showToast(data.message || 'Password reset successfully!', 'success');
+            // Populate login email and switch to login
+            if (gateLoginEmail) gateLoginEmail.value = email;
+            if (gateLoginPassword) gateLoginPassword.value = new_password;
+            switchGateTab('login');
+          } else {
+            gateForgotFeedback.className = 'status-alert status-alert-error';
+            gateForgotFeedback.textContent = data.error || 'Password reset failed.';
+            gateForgotFeedback.classList.remove('is-hidden');
+            addMicroBounce(gateForgotFeedback);
+          }
+        } catch (err) {
+          btnGateSubmitForgot.disabled = false;
+          btnGateSubmitForgot.querySelector('span').textContent = 'Reset Password & Sign In →';
+          gateForgotFeedback.className = 'status-alert status-alert-error';
+          gateForgotFeedback.textContent = err.message || 'Network error.';
+          gateForgotFeedback.classList.remove('is-hidden');
         }
       });
     }
