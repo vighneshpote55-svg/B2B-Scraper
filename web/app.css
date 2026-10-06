@@ -4495,19 +4495,234 @@ img, svg, canvas, video {
   text-decoration: underline;
 }
 
+/* Form Labels */
+.mockup-label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin-bottom: 0.35rem;
+  letter-spacing: 0.01em;
+}
+
+/* Subtle Flowing Data Connection Lines */
+.mockup-data-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.data-line {
+  stroke: rgba(99, 102, 241, 0.4);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 6;
+  animation: flowDataLines 18s linear infinite;
+}
+
+.data-line.line-2 { stroke: rgba(56, 189, 248, 0.35); animation-duration: 22s; }
+.data-line.line-3 { stroke: rgba(168, 85, 247, 0.35); animation-duration: 25s; }
+.data-line.line-4 { stroke: rgba(56, 189, 248, 0.35); animation-duration: 20s; }
+
+@keyframes flowDataLines {
+  from { stroke-dashoffset: 200; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* Pin halos */
+.mockup-pin {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 16px #38bdf8;
+  z-index: 4;
+}
+
+.pin-tl { top: 22%; left: 24%; background: #a855f7; box-shadow: 0 0 16px #a855f7; }
+.pin-tr { top: 22%; right: 24%; background: #818cf8; box-shadow: 0 0 16px #818cf8; }
+.pin-bl { bottom: 22%; left: 24%; background: #38bdf8; box-shadow: 0 0 16px #38bdf8; }
+
+.pin-halo {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  animation: pinPulse 3s infinite ease-out;
+}
+
+/* Card details & metadata */
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.15rem;
+}
+
+.mockup-brand-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.95rem;
+  border-radius: 9999px;
+  background: rgba(99, 102, 241, 0.14);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  color: #c084fc;
+  font-size: 0.8rem;
+  font-weight: 600;
+  width: fit-content;
+  letter-spacing: 0.02em;
+}
+
+.pulse-indicator {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+}
+
+/* Trust row badges */
+.mockup-trust-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  padding: 0.85rem 1.15rem;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+}
+
+.trust-badge-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.76rem;
+  color: #cbd5e1;
+  font-weight: 500;
+}
+
+/* Password Requirements & Strength Indicator */
+.password-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.4rem;
+  font-size: 0.75rem;
+}
+
+.pass-requirement-badge {
+  color: #94a3b8;
+  font-size: 0.74rem;
+  transition: color 0.2s ease;
+}
+
+.pass-requirement-badge.valid {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.password-strength-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.strength-bar {
+  width: 80px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.strength-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 9999px;
+  transition: width 0.25s ease, background-color 0.25s ease;
+}
+
+.strength-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.input-feedback-msg {
+  display: block;
+  font-size: 0.74rem;
+  color: #f43f5e;
+  margin-top: 0.3rem;
+  font-weight: 500;
+}
+
+/* Terms Checkbox */
+.mockup-terms-row {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  margin-top: -0.2rem;
+}
+
+.terms-chk-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  cursor: pointer;
+  line-height: 1.4;
+  user-select: none;
+}
+
+.terms-chk-label input {
+  accent-color: #6366f1;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.terms-link {
+  color: #818cf8;
+  text-decoration: none;
+}
+
+.terms-link:hover {
+  text-decoration: underline;
+  color: #a5b4fc;
+}
+
 @media (max-width: 1024px) {
   .mockup-hero-layout {
     grid-template-columns: 1fr !important;
     gap: 2rem !important;
   }
   .mockup-panel-left {
-    display: none !important;
+    order: 2;
   }
   .mockup-card-right {
+    order: 1;
     margin: 0 auto !important;
   }
   .gate-top-bar {
     padding: 1rem 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .auth-gate-overlay {
+    padding: 0 1.25rem 2rem 1.25rem !important;
+  }
+  .mockup-card-right {
+    padding: 2rem 1.5rem !important;
+  }
+  .mockup-trust-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
   }
 }
 

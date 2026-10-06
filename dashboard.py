@@ -755,10 +755,10 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             name = params.get("name", "").strip() or email.split("@")[0].capitalize()
 
             if not email or "@" not in email:
-                self._send_json({"error": "Please enter a valid email address."}, 400)
+                self._send_json({"error": "Please enter a valid work email address."}, 400)
                 return
-            if not password or len(password) < 6:
-                self._send_json({"error": "Password must be at least 6 characters long."}, 400)
+            if not password or len(password) < 8:
+                self._send_json({"error": "Password must be at least 8 characters long."}, 400)
                 return
 
             users = _load_users()

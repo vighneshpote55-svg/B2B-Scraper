@@ -14,20 +14,13 @@
 <body>
   <!-- Full-screen Animated Auth Gate Overlay (Enforces Auth Before Dashboard Access) -->
   <!-- Full-screen Animated Auth Gate Overlay (Pixel-perfect match to LeadMap Pro Mockup) -->
+  <!-- Full-screen Animated Auth Gate Overlay (Premium B2B SaaS Design) -->
   <div id="auth-gate-overlay" class="auth-gate-overlay" role="dialog" aria-modal="true" aria-labelledby="gate-auth-title">
-    <canvas id="auth-particle-canvas" class="auth-particle-canvas" aria-hidden="true"></canvas>
-
-    <div class="auth-gate-background-orbs" aria-hidden="true">
-      <div class="gate-orb gate-orb-1"></div>
-      <div class="gate-orb gate-orb-2"></div>
-      <div class="gate-orb gate-orb-3"></div>
-    </div>
-
     <!-- Top Header Bar -->
     <header class="gate-top-bar">
       <div class="gate-top-left">
         <div class="gate-logo-mark">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
             <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
             <circle cx="12" cy="10" r="3"></circle>
           </svg>
@@ -43,39 +36,47 @@
     </header>
 
     <div class="auth-gate-wrapper mockup-hero-layout">
-      <!-- Left Side Futuristic Interactive Map Graphic Showcase -->
+      <!-- Left Side — Brand / Visual Experience -->
       <div class="auth-showcase-panel mockup-panel-left">
-        <div class="mockup-pill-badge">
-          <span class="badge-sparkle">✨</span> AI-Powered Lead Intelligence
+        <div class="mockup-brand-tag">
+          <span class="pulse-indicator"></span> B2B Lead Intelligence
         </div>
 
         <h2 class="mockup-hero-title">
-          Turn Local Businesses Into <span class="gradient-text-purple">Qualified Leads</span>
+          Turn Local Businesses<br>
+          Into <span class="gradient-text-purple">Qualified Leads</span>
         </h2>
         <p class="mockup-hero-desc">
-          Search Google Maps, extract business data, and get high-quality leads — all in one powerful platform.
+          Search businesses, extract valuable data, and build high-quality lead lists — all from one powerful platform.
         </p>
 
-        <!-- 3D Map Grid Container with floating pin cards -->
-        <div class="mockup-map-container">
+        <!-- Stylized Digital Map Visualization -->
+        <div class="mockup-map-container" aria-hidden="true">
           <div class="mockup-map-grid-bg"></div>
-          <div class="mockup-radar-sweep"></div>
           
-          <!-- Animated Map Pins -->
-          <div class="mockup-pin pin-center"></div>
-          <div class="mockup-pin pin-1"></div>
-          <div class="mockup-pin pin-2"></div>
-          <div class="mockup-pin pin-3"></div>
-          <div class="mockup-pin pin-4"></div>
+          <!-- Subtle Flowing Data Connection Lines -->
+          <svg class="mockup-data-lines" viewBox="0 0 540 350" fill="none">
+            <path d="M 120 70 Q 270 120 270 175" class="data-line line-1" />
+            <path d="M 420 70 Q 270 120 270 175" class="data-line line-2" />
+            <path d="M 120 280 Q 270 230 270 175" class="data-line line-3" />
+            <path d="M 420 280 Q 270 230 270 175" class="data-line line-4" />
+          </svg>
 
-          <!-- Floating Business Lead Cards -->
+          <!-- Glowing Location Pins -->
+          <div class="mockup-pin pin-center"><span class="pin-halo"></span></div>
+          <div class="mockup-pin pin-tl"><span class="pin-halo"></span></div>
+          <div class="mockup-pin pin-tr"><span class="pin-halo"></span></div>
+          <div class="mockup-pin pin-bl"><span class="pin-halo"></span></div>
+
+          <!-- Gently Floating Lead Cards -->
           <div class="floating-lead-card card-tl">
             <div class="card-thumb thumb-rest"></div>
             <div class="card-details">
               <strong>Sunrise Restaurant</strong>
-              <span>Food &amp; Beverages</span>
-              <div class="card-rating">★ 4.6 <em>(120)</em></div>
-              <span class="pill-qualified">Qualified Lead</span>
+              <div class="card-meta">
+                <span class="card-rating">4.6 ★</span>
+                <span class="pill-qualified">Qualified Lead</span>
+              </div>
             </div>
           </div>
 
@@ -83,72 +84,50 @@
             <div class="card-thumb thumb-tech"></div>
             <div class="card-details">
               <strong>Global Tech Solutions</strong>
-              <span>IT Services</span>
-              <div class="card-rating">★ 4.8 <em>(89)</em></div>
-              <span class="pill-qualified">Qualified Lead</span>
+              <div class="card-meta">
+                <span class="card-rating">4.8 ★</span>
+                <span class="pill-qualified">Qualified Lead</span>
+              </div>
             </div>
           </div>
 
           <div class="floating-lead-card card-bl">
             <div class="card-thumb thumb-mart"></div>
             <div class="card-details">
-              <strong>Fresh Mart</strong>
-              <span>Grocery Store</span>
-              <div class="card-rating">★ 4.5 <em>(76)</em></div>
-              <span class="pill-qualified">Qualified Lead</span>
+              <strong>Fresh Market</strong>
+              <div class="card-meta">
+                <span class="card-rating">4.5 ★</span>
+                <span class="pill-qualified">Qualified Lead</span>
+              </div>
             </div>
           </div>
 
-          <div class="floating-lead-card card-br">
-            <div class="card-thumb thumb-clinic"></div>
-            <div class="card-details">
-              <strong>Wellness Clinic</strong>
-              <span>Healthcare</span>
-              <div class="card-rating">★ 4.7 <em>(132)</em></div>
-              <span class="pill-qualified">Qualified Lead</span>
-            </div>
-          </div>
-
-          <!-- Vertical Pipeline Steps Floating Card -->
-          <div class="floating-pipeline-card">
-            <div class="p-item"><span class="p-dot"></span> Google Maps Search</div>
-            <div class="p-item"><span class="p-dot"></span> Data Extraction</div>
-            <div class="p-item"><span class="p-dot"></span> Lead Qualification</div>
-            <div class="p-item"><span class="p-dot"></span> Export &amp; Grow</div>
-          </div>
+          <!-- Digital Radar Sweep -->
+          <div class="mockup-radar-sweep"></div>
         </div>
 
-        <!-- 3 Feature Chips Footer -->
-        <div class="mockup-feature-row">
-          <div class="mockup-feat-chip">
-            <div class="feat-icon-box">⚡</div>
-            <div>
-              <strong>Save Time</strong>
-              <p>Automate lead search and data extraction</p>
-            </div>
+        <!-- Trust Badges -->
+        <div class="mockup-trust-row">
+          <div class="trust-badge-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Verified Phone &amp; Email</span>
           </div>
-          <div class="mockup-feat-chip">
-            <div class="feat-icon-box">🎯</div>
-            <div>
-              <strong>Get Better Leads</strong>
-              <p>Verified &amp; business-ready leads</p>
-            </div>
+          <div class="trust-badge-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Automatic Lead Scoring</span>
           </div>
-          <div class="mockup-feat-chip">
-            <div class="feat-icon-box">🛡️</div>
-            <div>
-              <strong>Work Smarter</strong>
-              <p>Powerful tools for growth</p>
-            </div>
+          <div class="trust-badge-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>Direct CSV &amp; CRM Sync</span>
           </div>
         </div>
       </div>
 
-      <!-- Right Side Sleek Glassmorphism Sign In Card -->
+      <!-- Right Side — Create Account Card (Default) & Sign In Card -->
       <div class="auth-gate-card mockup-card-right">
         <div class="mockup-card-brand">
           <div class="gate-logo-mark large">
-            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
               <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
               <circle cx="12" cy="10" r="3"></circle>
             </svg>
@@ -157,24 +136,91 @@
         </div>
 
         <div class="mockup-card-title-group">
-          <h3 id="gate-auth-title">Welcome Back</h3>
-          <p id="gate-auth-sub">Sign in to your account to continue</p>
+          <h3 id="gate-auth-title">Create your account</h3>
+          <p id="gate-auth-sub">Start discovering and converting better leads today.</p>
         </div>
 
-        <!-- Login Form inside Auth Gate -->
-        <form id="gate-form-login" class="auth-form-body gate-form mockup-form">
+        <!-- Create Account / Register Form (Default View) -->
+        <form id="gate-form-register" class="auth-form-body gate-form mockup-form">
           <div class="form-group">
+            <label for="gate-register-name" class="mockup-label">Full Name</label>
             <div class="input-with-icon icon-inside">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
-              <input type="email" id="gate-login-email" class="form-input mockup-input" placeholder="Email address" required autocomplete="email">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+              <input type="text" id="gate-register-name" class="form-input mockup-input" placeholder="Enter your full name" required autocomplete="name">
             </div>
           </div>
 
           <div class="form-group">
+            <label for="gate-register-email" class="mockup-label">Work Email</label>
             <div class="input-with-icon icon-inside">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-              <input type="password" id="gate-login-password" class="form-input mockup-input" placeholder="Password" required autocomplete="current-password">
-              <button type="button" class="btn-password-toggle" aria-label="Toggle password visibility">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+              <input type="email" id="gate-register-email" class="form-input mockup-input" placeholder="you@company.com" required autocomplete="email">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="gate-register-password" class="mockup-label">Password</label>
+            <div class="input-with-icon icon-inside">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+              <input type="password" id="gate-register-password" class="form-input mockup-input" placeholder="Create a password" required minlength="8" autocomplete="new-password">
+              <button type="button" class="btn-password-toggle" data-target="gate-register-password" aria-label="Toggle password visibility">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              </button>
+            </div>
+            <!-- Password Requirements & Strength Indicator -->
+            <div class="password-meta-row">
+              <span id="pass-req-text" class="pass-requirement-badge">At least 8 characters</span>
+              <div id="password-strength-container" class="password-strength-box">
+                <div class="strength-bar"><div id="strength-fill" class="strength-fill"></div></div>
+                <span id="strength-label" class="strength-label"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="gate-register-confirm" class="mockup-label">Confirm Password</label>
+            <div class="input-with-icon icon-inside">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+              <input type="password" id="gate-register-confirm" class="form-input mockup-input" placeholder="Confirm your password" required minlength="8" autocomplete="new-password">
+              <button type="button" class="btn-password-toggle" data-target="gate-register-confirm" aria-label="Toggle confirm password visibility">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              </button>
+            </div>
+            <span id="confirm-match-error" class="input-feedback-msg is-hidden">Passwords do not match</span>
+          </div>
+
+          <!-- Terms Checkbox -->
+          <div class="mockup-terms-row">
+            <label class="terms-chk-label">
+              <input type="checkbox" id="gate-agree-terms" required>
+              <span class="custom-terms-chk"></span>
+              <span>I agree to the <a href="#" class="terms-link">Terms of Service</a> and <a href="#" class="terms-link">Privacy Policy</a></span>
+            </label>
+          </div>
+
+          <div id="gate-register-feedback" class="status-alert is-hidden"></div>
+
+          <button type="submit" id="btn-gate-submit-register" class="btn btn-primary w-full btn-lg mockup-submit-btn">
+            <span>Create Account →</span>
+          </button>
+        </form>
+
+        <!-- Sign In / Login Form (Swapped via Mode Toggle) -->
+        <form id="gate-form-login" class="auth-form-body gate-form mockup-form is-hidden">
+          <div class="form-group">
+            <label for="gate-login-email" class="mockup-label">Work Email</label>
+            <div class="input-with-icon icon-inside">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+              <input type="email" id="gate-login-email" class="form-input mockup-input" placeholder="you@company.com" required autocomplete="email">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="gate-login-password" class="mockup-label">Password</label>
+            <div class="input-with-icon icon-inside">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+              <input type="password" id="gate-login-password" class="form-input mockup-input" placeholder="Enter your password" required autocomplete="current-password">
+              <button type="button" class="btn-password-toggle" data-target="gate-login-password" aria-label="Toggle password visibility">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
               </button>
             </div>
@@ -183,7 +229,6 @@
           <div class="mockup-form-options">
             <label class="remember-me-toggle">
               <input type="checkbox" id="gate-remember-me" checked>
-              <span class="custom-chk"></span>
               <span>Remember me</span>
             </label>
             <a href="#" id="link-forgot-pass" class="forgot-pass-link">Forgot password?</a>
@@ -192,39 +237,7 @@
           <div id="gate-login-feedback" class="status-alert is-hidden"></div>
 
           <button type="submit" id="btn-gate-submit-login" class="btn btn-primary w-full btn-lg mockup-submit-btn">
-            <span>Sign In</span>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-          </button>
-        </form>
-
-        <!-- Register Form inside Auth Gate -->
-        <form id="gate-form-register" class="auth-form-body gate-form mockup-form is-hidden">
-          <div class="form-group">
-            <div class="input-with-icon icon-inside">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-              <input type="text" id="gate-register-name" class="form-input mockup-input" placeholder="Full Name" required autocomplete="name">
-            </div>
-          </div>
-
-          <div class="form-group">
-            <div class="input-with-icon icon-inside">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
-              <input type="email" id="gate-register-email" class="form-input mockup-input" placeholder="Email address" required autocomplete="email">
-            </div>
-          </div>
-
-          <div class="form-group">
-            <div class="input-with-icon icon-inside">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-              <input type="password" id="gate-register-password" class="form-input mockup-input" placeholder="Password (min 6 chars)" required minlength="6" autocomplete="new-password">
-            </div>
-          </div>
-
-          <div id="gate-register-feedback" class="status-alert is-hidden"></div>
-
-          <button type="submit" id="btn-gate-submit-register" class="btn btn-primary w-full btn-lg mockup-submit-btn">
-            <span>Create Account</span>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            <span>Sign In →</span>
           </button>
         </form>
 
@@ -235,7 +248,7 @@
 
         <!-- Google OAuth Button -->
         <button type="button" id="btn-google-auth" class="btn btn-google w-full">
-          <svg width="20" height="20" viewBox="0 0 24 24">
+          <svg width="18" height="18" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
             <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
             <path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.62z"/>
@@ -244,9 +257,10 @@
           <span>Continue with Google</span>
         </button>
 
+        <!-- Bottom Mode Switcher -->
         <div class="mockup-switch-mode">
-          <span id="auth-mode-prompt-text">Don't have an account?</span>
-          <button type="button" id="btn-toggle-auth-mode" class="link-switch">Create account</button>
+          <span id="auth-mode-prompt-text">Already have an account?</span>
+          <button type="button" id="btn-toggle-auth-mode" class="link-switch">Sign in</button>
         </div>
       </div>
     </div>

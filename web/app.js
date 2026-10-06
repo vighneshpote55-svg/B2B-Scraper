@@ -2408,24 +2408,125 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
       }
     }
 
+    // Additional Create Account Elements
+    const gateRegisterConfirm = document.getElementById('gate-register-confirm');
+    const gateAgreeTerms = document.getElementById('gate-agree-terms');
+    const confirmMatchError = document.getElementById('confirm-match-error');
+    const strengthFill = document.getElementById('strength-fill');
+    const strengthLabel = document.getElementById('strength-label');
+    const passReqText = document.getElementById('pass-req-text');
+    const gateAuthTitle = document.getElementById('gate-auth-title');
+    const gateAuthSub = document.getElementById('gate-auth-sub');
+    const btnToggleAuthMode = document.getElementById('btn-toggle-auth-mode');
+    const authModePromptText = document.getElementById('auth-mode-prompt-text');
+
+    // Real-time Password Strength Meter & Requirement Tracker
+    function evaluatePasswordStrength(password) {
+      if (!password) {
+        if (strengthFill) { strengthFill.style.width = '0%'; strengthFill.style.backgroundColor = 'transparent'; }
+        if (strengthLabel) { strengthLabel.textContent = ''; }
+        if (passReqText) { passReqText.classList.remove('valid'); }
+        return 0;
+      }
+
+      if (passReqText) {
+        if (password.length >= 8) {
+          passReqText.classList.add('valid');
+        } else {
+          passReqText.classList.remove('valid');
+        }
+      }
+
+      let score = 0;
+      if (password.length >= 8) score++;
+      if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score++;
+      if (/\d/.test(password)) score++;
+      if (/[^A-Za-z0-9]/.test(password)) score++;
+
+      const configs = [
+        { width: '25%', color: '#ef4444', text: 'Weak' },
+        { width: '50%', color: '#f59e0b', text: 'Fair' },
+        { width: '75%', color: '#3b82f6', text: 'Good' },
+        { width: '100%', color: '#10b981', text: 'Strong' }
+      ];
+
+      const config = configs[Math.min(score, 4) - 1] || configs[0];
+      if (strengthFill) {
+        strengthFill.style.width = config.width;
+        strengthFill.style.backgroundColor = config.color;
+      }
+      if (strengthLabel) {
+        strengthLabel.textContent = config.text;
+        strengthLabel.style.color = config.color;
+      }
+      return score;
+    }
+
+    if (gateRegisterPassword) {
+      gateRegisterPassword.addEventListener('input', () => {
+        evaluatePasswordStrength(gateRegisterPassword.value);
+        checkPasswordMatch();
+      });
+    }
+
+    function checkPasswordMatch() {
+      if (!gateRegisterConfirm || !confirmMatchError) return true;
+      const pass = gateRegisterPassword ? gateRegisterPassword.value : '';
+      const confirm = gateRegisterConfirm.value;
+      if (confirm && pass !== confirm) {
+        confirmMatchError.classList.remove('is-hidden');
+        return false;
+      } else {
+        confirmMatchError.classList.add('is-hidden');
+        return true;
+      }
+    }
+
+    if (gateRegisterConfirm) {
+      gateRegisterConfirm.addEventListener('input', checkPasswordMatch);
+    }
+
     function switchGateTab(tab) {
       if (tab === 'login') {
-        gateTabLogin.classList.add('is-active');
-        gateTabRegister.classList.remove('is-active');
-        gateFormLogin.classList.remove('is-hidden');
+        if (gateTabLogin) gateTabLogin.classList.add('is-active');
+        if (gateTabRegister) gateTabRegister.classList.remove('is-active');
+        if (gateAuthTitle) gateAuthTitle.textContent = 'Welcome back';
+        if (gateAuthSub) gateAuthSub.textContent = 'Sign in to your account to continue';
+        if (authModePromptText) authModePromptText.textContent = "Don't have an account?";
+        if (btnToggleAuthMode) btnToggleAuthMode.textContent = 'Create account';
+
         gateFormRegister.classList.add('is-hidden');
-        runAnimation(gateFormLogin, { opacity: [0, 1], translateY: [10, 0], duration: 300, ease: 'outCubic' });
+        gateFormLogin.classList.remove('is-hidden');
+        runAnimation(gateFormLogin, { opacity: [0, 1], translateY: [12, 0], duration: 280, ease: 'outCubic' });
       } else {
-        gateTabRegister.classList.add('is-active');
-        gateTabLogin.classList.remove('is-active');
-        gateFormRegister.classList.remove('is-hidden');
+        if (gateTabRegister) gateTabRegister.classList.add('is-active');
+        if (gateTabLogin) gateTabLogin.classList.remove('is-active');
+        if (gateAuthTitle) gateAuthTitle.textContent = 'Create your account';
+        if (gateAuthSub) gateAuthSub.textContent = 'Start discovering and converting better leads today.';
+        if (authModePromptText) authModePromptText.textContent = 'Already have an account?';
+        if (btnToggleAuthMode) btnToggleAuthMode.textContent = 'Sign in';
+
         gateFormLogin.classList.add('is-hidden');
-        runAnimation(gateFormRegister, { opacity: [0, 1], translateY: [10, 0], duration: 300, ease: 'outCubic' });
+        gateFormRegister.classList.remove('is-hidden');
+        runAnimation(gateFormRegister, { opacity: [0, 1], translateY: [12, 0], duration: 280, ease: 'outCubic' });
       }
     }
 
     if (gateTabLogin) gateTabLogin.addEventListener('click', () => switchGateTab('login'));
     if (gateTabRegister) gateTabRegister.addEventListener('click', () => switchGateTab('register'));
+
+    // Toggle mode link click
+    if (btnToggleAuthMode) {
+      btnToggleAuthMode.addEventListener('click', (e) => {
+        e.preventDefault();
+        const isRegisterVisible = !gateFormRegister.classList.contains('is-hidden');
+        if (isRegisterVisible) {
+          switchGateTab('login');
+        } else {
+          switchGateTab('register');
+        }
+      });
+    }
 
     // Submit Auth Gate Login
     if (gateFormLogin) {
@@ -2447,7 +2548,7 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
           });
           const data = await res.json();
           btnGateSubmitLogin.disabled = false;
-          btnGateSubmitLogin.querySelector('span').textContent = 'Sign In & Launch Dashboard';
+          btnGateSubmitLogin.querySelector('span').textContent = 'Sign In →';
 
           if (data.success && data.token) {
             authToken = data.token;
@@ -2464,7 +2565,7 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
           }
         } catch (err) {
           btnGateSubmitLogin.disabled = false;
-          btnGateSubmitLogin.querySelector('span').textContent = 'Sign In & Launch Dashboard';
+          btnGateSubmitLogin.querySelector('span').textContent = 'Sign In →';
           gateLoginFeedback.className = 'status-alert status-alert-error';
           gateLoginFeedback.textContent = err.message || 'Network error.';
           gateLoginFeedback.classList.remove('is-hidden');
@@ -2479,7 +2580,33 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
         const name = gateRegisterName.value.trim();
         const email = gateRegisterEmail.value.trim();
         const password = gateRegisterPassword.value.trim();
-        if (!email || !password) return;
+        const confirmPass = gateRegisterConfirm ? gateRegisterConfirm.value.trim() : password;
+
+        if (!name || !email || !password) return;
+
+        if (password.length < 8) {
+          gateRegisterFeedback.className = 'status-alert status-alert-error';
+          gateRegisterFeedback.textContent = 'Password must be at least 8 characters long.';
+          gateRegisterFeedback.classList.remove('is-hidden');
+          addMicroBounce(gateRegisterFeedback);
+          return;
+        }
+
+        if (password !== confirmPass) {
+          gateRegisterFeedback.className = 'status-alert status-alert-error';
+          gateRegisterFeedback.textContent = 'Passwords do not match.';
+          gateRegisterFeedback.classList.remove('is-hidden');
+          addMicroBounce(gateRegisterFeedback);
+          return;
+        }
+
+        if (gateAgreeTerms && !gateAgreeTerms.checked) {
+          gateRegisterFeedback.className = 'status-alert status-alert-error';
+          gateRegisterFeedback.textContent = 'Please accept the Terms of Service and Privacy Policy to continue.';
+          gateRegisterFeedback.classList.remove('is-hidden');
+          addMicroBounce(gateRegisterFeedback);
+          return;
+        }
 
         btnGateSubmitRegister.disabled = true;
         btnGateSubmitRegister.querySelector('span').textContent = 'Creating account...';
@@ -2493,7 +2620,7 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
           });
           const data = await res.json();
           btnGateSubmitRegister.disabled = false;
-          btnGateSubmitRegister.querySelector('span').textContent = 'Create Account & Access App';
+          btnGateSubmitRegister.querySelector('span').textContent = 'Create Account →';
 
           if (data.success && data.token) {
             authToken = data.token;
@@ -2501,7 +2628,7 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
             localStorage.setItem('leadmap_auth_token', authToken);
             updateAuthHeaderUI(currentUser);
             hideAuthGate();
-            showToast(data.message || 'Account created successfully!', 'success');
+            showToast(data.message || 'Account created successfully! Welcome to LeadMap Pro.', 'success');
           } else {
             gateRegisterFeedback.className = 'status-alert status-alert-error';
             gateRegisterFeedback.textContent = data.error || 'Failed to register.';
@@ -2510,7 +2637,7 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
           }
         } catch (err) {
           btnGateSubmitRegister.disabled = false;
-          btnGateSubmitRegister.querySelector('span').textContent = 'Create Account & Access App';
+          btnGateSubmitRegister.querySelector('span').textContent = 'Create Account →';
           gateRegisterFeedback.className = 'status-alert status-alert-error';
           gateRegisterFeedback.textContent = err.message || 'Network error.';
           gateRegisterFeedback.classList.remove('is-hidden');
@@ -2518,35 +2645,18 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
       });
     }
 
-    const btnToggleAuthMode = document.getElementById('btn-toggle-auth-mode');
-    const authModePromptText = document.getElementById('auth-mode-prompt-text');
-
-    if (btnToggleAuthMode) {
-      btnToggleAuthMode.addEventListener('click', (e) => {
-        e.preventDefault();
-        const isLoginVisible = !gateFormLogin.classList.contains('is-hidden');
-        if (isLoginVisible) {
-          switchGateTab('register');
-          if (authModePromptText) authModePromptText.textContent = 'Already have an account?';
-          btnToggleAuthMode.textContent = 'Sign in';
-        } else {
-          switchGateTab('login');
-          if (authModePromptText) authModePromptText.textContent = "Don't have an account?";
-          btnToggleAuthMode.textContent = 'Create account';
-        }
-      });
-    }
-
+    // Password Visibility Toggles
     document.querySelectorAll('.btn-password-toggle').forEach((btn) => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
         const targetId = btn.getAttribute('data-target');
         const input = document.getElementById(targetId);
         if (input) {
           const isPassword = input.type === 'password';
           input.type = isPassword ? 'text' : 'password';
           btn.innerHTML = isPassword
-            ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`
-            : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+            ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`
+            : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
         }
       });
     });
