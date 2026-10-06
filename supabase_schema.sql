@@ -103,4 +103,29 @@ CREATE POLICY "Allow anon read and write on scrape_history"
     USING (true)
     WITH CHECK (true);
 
+-- ==============================================================================
+-- 6. Create 'users' table for storing registered LeadMap user profiles & sessions
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.users (
+    id TEXT PRIMARY KEY,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    email TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    raw_user_meta JSONB DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON public.users (email);
+
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow anon read and write on users"
+    ON public.users
+    FOR ALL
+    TO anon, authenticated, service_role
+    USING (true)
+    WITH CHECK (true);
+
+
 -- Done! Tables public.leads and public.scrape_history are ready for LeadMap Pro sync.

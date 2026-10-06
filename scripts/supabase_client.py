@@ -485,6 +485,120 @@ def sync_all_history_to_supabase(data_dir: str):
     return results
 
 
+def save_user_to_supabase(user_obj: dict, supabase_url=None, supabase_key=None):
+    """Store or update user profile in Supabase 'users' table."""
+    url = (supabase_url or os.environ.get("SUPABASE_URL", "")).strip().rstrip("/")
+    key = (supabase_key or os.environ.get("SUPABASE_KEY", "")).strip()
+
+    if not (url and key):
+        return {"success": False, "error": "Supabase credentials not configured."}
+
+    endpoint = f"{url}/rest/v1/users"
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates,return=representation",
+        "User-Agent": "LeadMap-Pro-Supabase/1.0"
+    }
+
+    record = {
+        "id": user_obj.get("id"),
+        "email": user_obj.get("email"),
+        "name": user_obj.get("name"),
+        "password_hash": user_obj.get("password_hash"),
+        "raw_user_meta": {
+            "created_at": user_obj.get("created_at")
+        }
+    }
+
+    try:
+        data = json.dumps([record]).encode("utf-8")
+        req = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status in (200, 201):
+                return {"success": True, "data": json.loads(resp.read().decode())}
+            return {"success": True}
+    except Exception as e:
+        print(f"[Supabase save user error] {e}", file=sys.stderr)
+        return {"success": False, "error": str(e)}
+
+
+def get_user_from_supabase_by_email(email: str, supabase_url=None, supabase_key=None):
+    """Fetch user record from Supabase by email."""
+    url = (supabase_url or os.environ.get("SUPABASE_URL", "")).strip().rstrip("/")
+    key = (supabase_key or os.environ.get("SUPABASE_KEY", "")).strip()
+
+    if not (url and key and email):
+        return None
+
+    endpoint = f"{url}/rest/v1/users?email=eq.{urllib.parse.quote(str(email))}&limit=1"
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "User-Agent": "LeadMap-Pro-Supabase/1.0"
+    }
+
+    try:
+        req = urllib.request.Request(endpoint, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status in (200, 206):
+                rows = json.loads(resp.read().decode("utf-8"))
+                if rows and isinstance(rows, list) and len(rows) > 0:
+                    r = rows[0]
+                    meta = r.get("raw_user_meta") or {}
+                    return {
+                        "id": r.get("id"),
+                        "email": r.get("email"),
+                        "name": r.get("name"),
+                        "password_hash": r.get("password_hash"),
+                        "created_at": meta.get("created_at") or 0
+                    }
+    except Exception as e:
+        print(f"[Supabase get user error] {e}", file=sys.stderr)
+    return None
+
+
+def fetch_all_users_from_supabase(supabase_url=None, supabase_key=None):
+    """Retrieve dictionary of all registered users from Supabase keyed by email."""
+    url = (supabase_url or os.environ.get("SUPABASE_URL", "")).strip().rstrip("/")
+    key = (supabase_key or os.environ.get("SUPABASE_KEY", "")).strip()
+
+    if not (url and key):
+        return {}
+
+    endpoint = f"{url}/rest/v1/users?select=*"
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "User-Agent": "LeadMap-Pro-Supabase/1.0"
+    }
+
+    try:
+        req = urllib.request.Request(endpoint, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status in (200, 206):
+                rows = json.loads(resp.read().decode("utf-8"))
+                users_map = {}
+                for r in rows:
+                    email = r.get("email")
+                    if email:
+                        meta = r.get("raw_user_meta") or {}
+                        users_map[email] = {
+                            "id": r.get("id"),
+                            "email": email,
+                            "name": r.get("name"),
+                            "password_hash": r.get("password_hash"),
+                            "created_at": meta.get("created_at") or 0
+                        }
+                return users_map
+    except Exception as e:
+        print(f"[Supabase fetch all users error] {e}", file=sys.stderr)
+    return {}
+
+
 if __name__ == "__main__":
     url, key, tbl = get_config()
     print("Testing Supabase connection...")

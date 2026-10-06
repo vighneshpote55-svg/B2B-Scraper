@@ -62,13 +62,26 @@ def _verify_password(password, stored_password_hash):
 
 def _load_users():
     with USER_LOCK:
-        if not os.path.isfile(USERS_FILE):
-            return {}
-        try:
-            with open(USERS_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            return {}
+        users = {}
+        if os.path.isfile(USERS_FILE):
+            try:
+                with open(USERS_FILE, "r") as f:
+                    users = json.load(f)
+            except Exception:
+                users = {}
+
+        if is_supabase_configured():
+            try:
+                sb_users = fetch_all_users_from_supabase()
+                if sb_users:
+                    # Merge Supabase users with local cache
+                    for em, u in sb_users.items():
+                        if em not in users or u.get("created_at", 0) > users[em].get("created_at", 0):
+                            users[em] = u
+            except Exception as e:
+                print(f"[Supabase load users error] {e}")
+
+        return users
 
 def _save_users(users):
     with USER_LOCK:
@@ -122,7 +135,10 @@ try:
         save_scrape_job_to_supabase,
         fetch_history_from_supabase,
         fetch_leads_for_job_from_supabase,
-        sync_all_history_to_supabase
+        sync_all_history_to_supabase,
+        save_user_to_supabase,
+        get_user_from_supabase_by_email,
+        fetch_all_users_from_supabase
     )
 except ImportError:
     is_supabase_configured = lambda: False
@@ -134,6 +150,9 @@ except ImportError:
     fetch_history_from_supabase = lambda *args, **kwargs: []
     fetch_leads_for_job_from_supabase = lambda *args, **kwargs: []
     sync_all_history_to_supabase = lambda *args, **kwargs: {"jobs_synced": 0, "leads_synced": 0}
+    save_user_to_supabase = lambda *args, **kwargs: {"success": False}
+    get_user_from_supabase_by_email = lambda *args, **kwargs: None
+    fetch_all_users_from_supabase = lambda *args, **kwargs: {}
 
 UA = "google-maps-scraper-dashboard/1.0"
 LEAD_FIELDS = ["lead_tier", "lead_score", "title", "phone", "emails", "website", "category", "address", "review_rating", "review_count", "instagram", "facebook", "linkedin"]
@@ -758,6 +777,12 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             }
             users[email] = user_obj
             _save_users(users)
+
+            if is_supabase_configured():
+                try:
+                    save_user_to_supabase(user_obj)
+                except Exception as sbe:
+                    print(f"[Supabase sync user error] {sbe}")
 
             token = secrets.token_hex(24)
             sessions = _load_sessions()

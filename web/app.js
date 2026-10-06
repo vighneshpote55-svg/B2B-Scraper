@@ -2104,7 +2104,21 @@ CREATE TABLE IF NOT EXISTS public.scrape_history (
 
 CREATE INDEX IF NOT EXISTS idx_history_created_at ON public.scrape_history (created_at DESC);
 ALTER TABLE public.scrape_history ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow anon read and write on scrape_history" ON public.scrape_history FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);`;
+CREATE POLICY "Allow anon read and write on scrape_history" ON public.scrape_history FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+
+-- 3. Users Table
+CREATE TABLE IF NOT EXISTS public.users (
+    id TEXT PRIMARY KEY,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    email TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    raw_user_meta JSONB DEFAULT '{}'::jsonb
+);
+CREATE INDEX IF NOT EXISTS idx_users_email ON public.users (email);
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);`;
       try {
         await navigator.clipboard.writeText(sqlSchema);
         btnCopySql.textContent = 'Copied! ✔';
