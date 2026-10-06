@@ -2378,6 +2378,7 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
     function showAuthGate() {
       if (!authGateOverlay) return;
       authGateOverlay.classList.remove('is-hidden');
+      if (typeof switchGateTab === 'function') switchGateTab('login');
       animateGateEntrance();
     }
 
@@ -2501,8 +2502,8 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
       if (tab === 'login') {
         if (gateTabLogin) gateTabLogin.classList.add('is-active');
         if (gateTabRegister) gateTabRegister.classList.remove('is-active');
-        if (gateAuthTitle) gateAuthTitle.textContent = 'Welcome back';
-        if (gateAuthSub) gateAuthSub.textContent = 'Sign in to your account to continue.';
+        if (gateAuthTitle) gateAuthTitle.textContent = 'Welcome Back';
+        if (gateAuthSub) gateAuthSub.textContent = 'Sign in to your account to continue';
         if (authModePromptText) authModePromptText.textContent = "Don't have an account?";
         if (btnToggleAuthMode) btnToggleAuthMode.textContent = 'Create account';
 
@@ -2678,7 +2679,7 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
           });
           const data = await res.json();
           btnGateSubmitLogin.disabled = false;
-          btnGateSubmitLogin.querySelector('span').textContent = 'Sign In →';
+          btnGateSubmitLogin.querySelector('span').textContent = 'Sign In';
 
           if (data.success && data.token) {
             authToken = data.token;
@@ -2695,7 +2696,7 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
           }
         } catch (err) {
           btnGateSubmitLogin.disabled = false;
-          btnGateSubmitLogin.querySelector('span').textContent = 'Sign In →';
+          btnGateSubmitLogin.querySelector('span').textContent = 'Sign In';
           gateLoginFeedback.className = 'status-alert status-alert-error';
           gateLoginFeedback.textContent = err.message || 'Network error.';
           gateLoginFeedback.classList.remove('is-hidden');

@@ -16,15 +16,61 @@
   <!-- Full-screen Animated Auth Gate Overlay (Pixel-perfect match to LeadMap Pro Mockup) -->
   <!-- Full-screen Animated Auth Gate Overlay (Premium B2B SaaS Design) -->
   <div id="auth-gate-overlay" class="auth-gate-overlay" role="dialog" aria-modal="true" aria-labelledby="gate-auth-title">
+    <!-- Glowing Neon Wave Horizon in Background -->
+    <div class="gate-bg-waves" aria-hidden="true">
+      <svg class="gate-wave-svg" viewBox="0 0 1440 600" fill="none" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="waveGradCyan" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#00d2d3" stop-opacity="0"/>
+            <stop offset="25%" stop-color="#38bdf8" stop-opacity="0.85"/>
+            <stop offset="65%" stop-color="#818cf8" stop-opacity="0.9"/>
+            <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.15"/>
+          </linearGradient>
+          <linearGradient id="waveGradPurple" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.1"/>
+            <stop offset="35%" stop-color="#a855f7" stop-opacity="0.8"/>
+            <stop offset="70%" stop-color="#38bdf8" stop-opacity="0.75"/>
+            <stop offset="100%" stop-color="#6366f1" stop-opacity="0.1"/>
+          </linearGradient>
+          <filter id="neonGlowCyan" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="6" result="blur"/>
+            <feMerge>
+              <feMergeNode in="blur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+          <filter id="neonGlowPurple" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="8" result="blur"/>
+            <feMerge>
+              <feMergeNode in="blur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+        <!-- Primary Cyan Neon Wave -->
+        <path d="M-60 490 C 220 440, 420 540, 750 460 C 1080 390, 1260 480, 1520 410" stroke="url(#waveGradCyan)" stroke-width="2.6" filter="url(#neonGlowCyan)" fill="none"/>
+        <path d="M-60 491 C 220 441, 420 541, 750 461 C 1080 391, 1260 481, 1520 411" stroke="#ffffff" stroke-width="1.1" stroke-opacity="0.45" fill="none"/>
+        <!-- Secondary Purple Neon Wave -->
+        <path d="M-40 530 C 260 570, 460 400, 820 490 C 1140 560, 1310 420, 1540 470" stroke="url(#waveGradPurple)" stroke-width="2.4" filter="url(#neonGlowPurple)" fill="none"/>
+        <!-- Ambient Diffuse Glows -->
+        <circle cx="500" cy="470" r="260" fill="rgba(56, 189, 248, 0.09)" filter="blur(60px)"/>
+        <circle cx="1150" cy="520" r="280" fill="rgba(99, 102, 241, 0.08)" filter="blur(70px)"/>
+      </svg>
+    </div>
+
     <!-- Top Header Bar -->
     <header class="gate-top-bar">
       <div class="gate-top-left">
-        <div class="gate-logo-mark">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-            <circle cx="12" cy="10" r="3"></circle>
-          </svg>
-        </div>
+        <svg class="leadmap-logo-pin" width="34" height="42" viewBox="0 0 32 40" fill="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="hdrPinGrad" x1="0" y1="0" x2="32" y2="40" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#8b5cf6"/>
+              <stop offset="45%" stop-color="#6366f1"/>
+              <stop offset="100%" stop-color="#38bdf8"/>
+            </linearGradient>
+          </defs>
+          <path d="M16 2C8.27 2 2 8.27 2 16c0 10.4 12.8 21.8 13.36 22.3a0.98.98 0 0 0 1.28 0C17.2 37.8 30 26.4 30 16 30 8.27 23.73 2 16 2zm0 18.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z" fill="url(#hdrPinGrad)"/>
+        </svg>
         <div class="gate-top-brand">
           <h1>LeadMap <span>Pro</span></h1>
           <span class="gate-top-tagline">Find · Extract · Grow</span>
@@ -36,10 +82,10 @@
     </header>
 
     <div class="auth-gate-wrapper mockup-hero-layout">
-      <!-- Left Side — Brand / Visual Experience -->
+      <!-- Left Side — Brand / Visual Experience (Pixel-Perfect to Mockup) -->
       <div class="auth-showcase-panel mockup-panel-left">
-        <div class="mockup-brand-tag">
-          <span class="pulse-indicator"></span> B2B Lead Intelligence
+        <div class="mockup-pill-badge">
+          AI-Powered Lead Intelligence
         </div>
 
         <h2 class="mockup-hero-title">
@@ -47,116 +93,208 @@
           Into <span class="gradient-text-purple">Qualified Leads</span>
         </h2>
         <p class="mockup-hero-desc">
-          Search businesses, extract valuable data, and build high-quality lead lists — all from one powerful platform.
+          Search Google Maps, extract business data, and get high-quality leads — all in one powerful platform.
         </p>
 
-        <!-- Stylized Digital Map Visualization -->
+        <!-- 3D Futuristic Digital Map Visualization -->
         <div class="mockup-map-container" aria-hidden="true">
-          <div class="mockup-map-grid-bg"></div>
-          
-          <!-- Subtle Flowing Data Connection Lines -->
-          <svg class="mockup-data-lines" viewBox="0 0 540 350" fill="none">
-            <path d="M 120 70 Q 270 120 270 175" class="data-line line-1" />
-            <path d="M 420 70 Q 270 120 270 175" class="data-line line-2" />
-            <path d="M 120 280 Q 270 230 270 175" class="data-line line-3" />
-            <path d="M 420 280 Q 270 230 270 175" class="data-line line-4" />
-          </svg>
+          <!-- 3D Isometric Board -->
+          <div class="mockup-3d-board">
+            <div class="board-grid-lines"></div>
+            <div class="board-road-network"></div>
+            
+            <!-- Concentric Pulsing Radar Rings -->
+            <div class="board-radar-ring ring-1"></div>
+            <div class="board-radar-ring ring-2"></div>
+            <div class="board-radar-ring ring-3"></div>
 
-          <!-- Glowing Location Pins -->
-          <div class="mockup-pin pin-center"><span class="pin-halo"></span></div>
-          <div class="mockup-pin pin-tl"><span class="pin-halo"></span></div>
-          <div class="mockup-pin pin-tr"><span class="pin-halo"></span></div>
-          <div class="mockup-pin pin-bl"><span class="pin-halo"></span></div>
+            <!-- Central Pin Standing on Map -->
+            <div class="board-center-pin">
+              <svg width="24" height="30" viewBox="0 0 32 40" fill="none">
+                <path d="M16 2C8.27 2 2 8.27 2 16c0 10.4 12.8 21.8 13.36 22.3a0.98.98 0 0 0 1.28 0C17.2 37.8 30 26.4 30 16 30 8.27 23.73 2 16 2zm0 18.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z" fill="#38bdf8"/>
+              </svg>
+              <div class="pin-base-glow"></div>
+            </div>
 
-          <!-- Gently Floating Lead Cards -->
+            <!-- Scattered Glowing Map Pins on Grid -->
+            <div class="board-map-pin pin-spot-1 pin-cyan"></div>
+            <div class="board-map-pin pin-spot-2 pin-purple"></div>
+            <div class="board-map-pin pin-spot-3 pin-cyan"></div>
+            <div class="board-map-pin pin-spot-4 pin-purple"></div>
+            <div class="board-map-pin pin-spot-5 pin-cyan"></div>
+            <div class="board-map-pin pin-spot-6 pin-purple"></div>
+            <div class="board-map-pin pin-spot-7 pin-cyan"></div>
+          </div>
+
+          <!-- Floating Lead Card 1: Sunrise Restaurant (Top Left) -->
           <div class="floating-lead-card card-tl">
-            <div class="card-thumb thumb-rest"></div>
+            <div class="card-thumb-wrapper">
+              <img src="assets/thumb-restaurant.jpg" alt="Sunrise Restaurant" class="card-thumb-img">
+              <span class="card-corner-badge badge-purple">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line></svg>
+              </span>
+            </div>
             <div class="card-details">
               <strong>Sunrise Restaurant</strong>
-              <div class="card-meta">
-                <span class="card-rating">4.6 ★</span>
-                <span class="pill-qualified">Qualified Lead</span>
-              </div>
+              <span class="card-category">Food &amp; Beverages</span>
+              <div class="card-rating"><span class="star-gold">★</span> 4.6 <em>(120)</em></div>
+              <span class="pill-qualified">Qualified Lead</span>
             </div>
           </div>
 
+          <!-- Floating Lead Card 2: Global Tech Solutions (Top Right) -->
           <div class="floating-lead-card card-tr">
-            <div class="card-thumb thumb-tech"></div>
+            <div class="card-thumb-wrapper">
+              <img src="assets/thumb-tech.jpg" alt="Global Tech Solutions" class="card-thumb-img">
+              <span class="card-corner-badge badge-cyan">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line></svg>
+              </span>
+            </div>
             <div class="card-details">
               <strong>Global Tech Solutions</strong>
-              <div class="card-meta">
-                <span class="card-rating">4.8 ★</span>
-                <span class="pill-qualified">Qualified Lead</span>
-              </div>
+              <span class="card-category">IT Services</span>
+              <div class="card-rating"><span class="star-gold">★</span> 4.8 <em>(89)</em></div>
+              <span class="pill-qualified">Qualified Lead</span>
             </div>
           </div>
 
+          <!-- Floating Pipeline Steps Card (Center-Right above the map) -->
+          <div class="floating-pipeline-card">
+            <div class="p-item">
+              <svg class="p-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#EA4335"/>
+                <circle cx="12" cy="9" r="2.5" fill="#ffffff"/>
+              </svg>
+              <span>Google Maps Search</span>
+            </div>
+            <div class="p-item">
+              <svg class="p-icon stroke-cyan" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
+                <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+              </svg>
+              <span>Data Extraction</span>
+            </div>
+            <div class="p-item">
+              <svg class="p-icon stroke-cyan" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                <polyline points="9 12 11 14 15 10"/>
+              </svg>
+              <span>Lead Qualification</span>
+            </div>
+            <div class="p-item">
+              <svg class="p-icon stroke-cyan" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              <span>Export &amp; Grow</span>
+            </div>
+          </div>
+
+          <!-- Floating Lead Card 3: Fresh Mart (Bottom Left) -->
           <div class="floating-lead-card card-bl">
-            <div class="card-thumb thumb-mart"></div>
+            <div class="card-thumb-wrapper">
+              <img src="assets/thumb-mart.jpg" alt="Fresh Mart" class="card-thumb-img">
+              <span class="card-corner-badge badge-amber">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+              </span>
+            </div>
             <div class="card-details">
-              <strong>Fresh Market</strong>
-              <div class="card-meta">
-                <span class="card-rating">4.5 ★</span>
-                <span class="pill-qualified">Qualified Lead</span>
-              </div>
+              <strong>Fresh Mart</strong>
+              <span class="card-category">Grocery Store</span>
+              <div class="card-rating"><span class="star-gold">★</span> 4.5 <em>(76)</em></div>
+              <span class="pill-qualified">Qualified Lead</span>
             </div>
           </div>
 
-          <!-- Digital Radar Sweep -->
-          <div class="mockup-radar-sweep"></div>
+          <!-- Floating Lead Card 4: Wellness Clinic (Bottom Right) -->
+          <div class="floating-lead-card card-br">
+            <div class="card-thumb-wrapper">
+              <img src="assets/thumb-clinic.jpg" alt="Wellness Clinic" class="card-thumb-img">
+              <span class="card-corner-badge badge-emerald">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+              </span>
+            </div>
+            <div class="card-details">
+              <strong>Wellness Clinic</strong>
+              <span class="card-category">Healthcare</span>
+              <div class="card-rating"><span class="star-gold">★</span> 4.7 <em>(132)</em></div>
+              <span class="pill-qualified">Qualified Lead</span>
+            </div>
+          </div>
         </div>
 
-        <!-- Trust Badges -->
-        <div class="mockup-trust-row">
-          <div class="trust-badge-item">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span>Verified Phone &amp; Email</span>
+        <!-- 3 Feature Chips Footer (Save Time, Get Better Leads, Work Smarter) -->
+        <div class="mockup-feature-row">
+          <div class="mockup-feat-chip">
+            <div class="feat-icon-box">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            </div>
+            <div>
+              <strong>Save Time</strong>
+              <p>Automate lead search and data extraction</p>
+            </div>
           </div>
-          <div class="trust-badge-item">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span>Automatic Lead Scoring</span>
+          <div class="mockup-feat-chip">
+            <div class="feat-icon-box">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+            </div>
+            <div>
+              <strong>Get Better Leads</strong>
+              <p>Verified &amp; business ready leads</p>
+            </div>
           </div>
-          <div class="trust-badge-item">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span>Direct CSV &amp; CRM Sync</span>
+          <div class="mockup-feat-chip">
+            <div class="feat-icon-box">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <div>
+              <strong>Work Smarter</strong>
+              <p>Powerful tools for growth</p>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Right Side — Create Account Card (Default) & Sign In Card -->
+      <!-- Right Side — Sign In Card (Default) & Create Account Card -->
       <div class="auth-gate-card mockup-card-right">
-        <div class="mockup-card-brand">
-          <div class="gate-logo-mark large">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-              <circle cx="12" cy="10" r="3"></circle>
+        <div class="mockup-card-header">
+          <div class="mockup-card-brand-row">
+            <svg class="leadmap-logo-pin" width="36" height="44" viewBox="0 0 32 40" fill="none" aria-hidden="true">
+              <defs>
+                <linearGradient id="cardPinGrad" x1="0" y1="0" x2="32" y2="40" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#8b5cf6"/>
+                  <stop offset="45%" stop-color="#6366f1"/>
+                  <stop offset="100%" stop-color="#38bdf8"/>
+                </linearGradient>
+              </defs>
+              <path d="M16 2C8.27 2 2 8.27 2 16c0 10.4 12.8 21.8 13.36 22.3a0.98.98 0 0 0 1.28 0C17.2 37.8 30 26.4 30 16 30 8.27 23.73 2 16 2zm0 18.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z" fill="url(#cardPinGrad)"/>
             </svg>
+            <h2>LeadMap <span>Pro</span></h2>
           </div>
-          <h2>LeadMap <span>Pro</span></h2>
+
+          <div class="mockup-card-title-group">
+            <h3 id="gate-auth-title">Welcome Back</h3>
+            <p id="gate-auth-sub">Sign in to your account to continue</p>
+          </div>
         </div>
 
-        <div class="mockup-card-title-group">
-          <h3 id="gate-auth-title">Welcome back</h3>
-          <p id="gate-auth-sub">Sign in to your account to continue.</p>
-        </div>
-
-        <!-- Sign In / Login Form (Default View) -->
+        <!-- Sign In / Login Form (Default View - Pixel-Perfect to Mockup) -->
         <form id="gate-form-login" class="auth-form-body gate-form mockup-form">
           <div class="form-group">
-            <label for="gate-login-email" class="mockup-label">Work Email</label>
             <div class="input-with-icon icon-inside">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
-              <input type="email" id="gate-login-email" class="form-input mockup-input" placeholder="you@company.com" required autocomplete="email">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"></rect><polyline points="3 7 12 13 21 7"></polyline></svg>
+              <input type="email" id="gate-login-email" class="form-input mockup-input" placeholder="Email address" required autocomplete="email">
             </div>
           </div>
 
           <div class="form-group">
-            <label for="gate-login-password" class="mockup-label">Password</label>
             <div class="input-with-icon icon-inside">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-              <input type="password" id="gate-login-password" class="form-input mockup-input" placeholder="Enter your password" required autocomplete="current-password">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+              <input type="password" id="gate-login-password" class="form-input mockup-input" placeholder="Password" required autocomplete="current-password">
               <button type="button" class="btn-password-toggle" data-target="gate-login-password" aria-label="Toggle password visibility">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
               </button>
             </div>
           </div>
@@ -164,6 +302,7 @@
           <div class="mockup-form-options">
             <label class="remember-me-toggle">
               <input type="checkbox" id="gate-remember-me" checked>
+              <span class="custom-chk-box"></span>
               <span>Remember me</span>
             </label>
             <a href="#" id="link-forgot-pass" class="forgot-pass-link">Forgot password?</a>
@@ -172,7 +311,8 @@
           <div id="gate-login-feedback" class="status-alert is-hidden"></div>
 
           <button type="submit" id="btn-gate-submit-login" class="btn btn-primary w-full btn-lg mockup-submit-btn">
-            <span>Sign In →</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+            <span>Sign In</span>
           </button>
         </form>
 
