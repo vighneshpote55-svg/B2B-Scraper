@@ -309,7 +309,11 @@ def main():
 
     # Automatic Supabase sync if credentials exist in .env
     try:
-        from scripts.supabase_client import is_configured as is_sb_ready, sync_leads as sb_sync
+        from scripts.supabase_client import (
+            is_configured as is_sb_ready,
+            sync_leads as sb_sync,
+            save_scrape_job_to_supabase as sb_save_job
+        )
         if is_sb_ready():
             print("▶ Syncing qualified leads to Supabase Cloud...")
             sb_res = sb_sync(results, job_id=job_id)
@@ -317,6 +321,25 @@ def main():
                 print(f"  ✔ {sb_res.get('message')}")
             else:
                 print(f"  ✗ Supabase sync error: {sb_res.get('error')}", file=sys.stderr)
+
+            sb_save_job({
+                "id": job_id,
+                "keyword": a.keyword,
+                "city": a.city,
+                "depth": a.depth,
+                "status": "ok",
+                "stage": "Completed",
+                "completed_at": time.time(),
+                "leads": results,
+                "metrics": {
+                    "total": len(results),
+                    "hot": sum(1 for l in results if l.get("lead_tier") == "HOT"),
+                    "warm": sum(1 for l in results if l.get("lead_tier") == "WARM"),
+                    "cold": sum(1 for l in results if l.get("lead_tier") == "COLD"),
+                    "with_email": sum(1 for l in results if l.get("emails")),
+                    "with_phone": sum(1 for l in results if l.get("clean_phone"))
+                }
+            })
     except Exception as e:
         pass
 

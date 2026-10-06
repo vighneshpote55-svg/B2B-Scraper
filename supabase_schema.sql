@@ -56,11 +56,10 @@ CREATE TRIGGER trigger_leads_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION public.update_leads_updated_at();
 
--- 4. Enable Row Level Security (RLS)
+-- 4. Enable Row Level Security (RLS) on leads
 ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 
 -- Allow anon and authenticated users full read & write access for local scraper integration
--- (You can restrict this later based on your auth requirements)
 CREATE POLICY "Allow anon read and insert on leads"
     ON public.leads
     FOR ALL
@@ -68,4 +67,40 @@ CREATE POLICY "Allow anon read and insert on leads"
     USING (true)
     WITH CHECK (true);
 
--- Done! Table public.leads is ready for LeadMap Pro sync.
+-- ==============================================================================
+-- 5. Create 'scrape_history' table for tracking past searches and scrape runs
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.scrape_history (
+    id TEXT PRIMARY KEY,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    started_at BIGINT,
+    completed_at BIGINT,
+    keyword TEXT,
+    city TEXT,
+    depth INTEGER DEFAULT 5,
+    status TEXT DEFAULT 'ok',
+    stage TEXT,
+    leads_count INTEGER DEFAULT 0,
+    hot_count INTEGER DEFAULT 0,
+    warm_count INTEGER DEFAULT 0,
+    cold_count INTEGER DEFAULT 0,
+    email_count INTEGER DEFAULT 0,
+    phone_count INTEGER DEFAULT 0,
+    skipped_previous_count INTEGER DEFAULT 0,
+    metrics JSONB DEFAULT '{}'::jsonb,
+    params JSONB DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX IF NOT EXISTS idx_history_created_at ON public.scrape_history (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_history_keyword ON public.scrape_history (keyword);
+
+ALTER TABLE public.scrape_history ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow anon read and write on scrape_history"
+    ON public.scrape_history
+    FOR ALL
+    TO anon, authenticated, service_role
+    USING (true)
+    WITH CHECK (true);
+
+-- Done! Tables public.leads and public.scrape_history are ready for LeadMap Pro sync.

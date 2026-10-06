@@ -1697,6 +1697,31 @@ button, input, select, textarea {
   align-items: center;
 }
 
+.drawer-toolbar {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.w-full {
+  width: 100%;
+}
+
+.history-cloud-tag {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  white-space: nowrap;
+}
+
+.history-item.is-cloud-synced {
+  border-left: 3px solid #10b981;
+}
+
 .drawer-title-group {
   display: flex;
   align-items: center;

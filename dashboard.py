@@ -68,7 +68,11 @@ try:
         test_connection as test_supabase_connection,
         sync_leads as sync_supabase_leads,
         get_config as get_supabase_config,
-        disconnect as disconnect_supabase
+        disconnect as disconnect_supabase,
+        save_scrape_job_to_supabase,
+        fetch_history_from_supabase,
+        fetch_leads_for_job_from_supabase,
+        sync_all_history_to_supabase
     )
 except ImportError:
     is_supabase_configured = lambda: False
@@ -76,6 +80,10 @@ except ImportError:
     sync_supabase_leads = lambda *args, **kwargs: {"success": False, "error": "Supabase client unavailable"}
     get_supabase_config = lambda: ("", "", "leads")
     disconnect_supabase = lambda: True
+    save_scrape_job_to_supabase = lambda *args, **kwargs: {"success": False, "error": "Supabase client unavailable"}
+    fetch_history_from_supabase = lambda *args, **kwargs: []
+    fetch_leads_for_job_from_supabase = lambda *args, **kwargs: []
+    sync_all_history_to_supabase = lambda *args, **kwargs: {"jobs_synced": 0, "leads_synced": 0}
 
 UA = "google-maps-scraper-dashboard/1.0"
 LEAD_FIELDS = ["lead_tier", "lead_score", "title", "phone", "emails", "website", "category", "address", "review_rating", "review_count", "instagram", "facebook", "linkedin"]
@@ -268,13 +276,36 @@ def background_job_processor(job_id, params):
         if is_supabase_configured() and os.environ.get("SUPABASE_AUTO_SYNC", "true").lower() == "true":
             try:
                 with JOB_LOCK:
-                    JOB_CACHE[job_id]["stage"] = "Syncing qualified leads to Supabase Cloud..."
+                    JOB_CACHE[job_id]["stage"] = "Syncing qualified leads and history to Supabase Cloud..."
                 sync_res = sync_supabase_leads(cleaned_leads, job_id=job_id)
                 if sync_res.get("success"):
                     supabase_synced = sync_res.get("count", 0)
                     print(f"[Supabase] Automatically synced {supabase_synced} leads to table '{get_supabase_config()[2]}'")
                 else:
-                    print(f"[Supabase] Cloud sync skipped: {sync_res.get('error')}. Leads safely saved to Local DB.")
+                    print(f"[Supabase] Cloud leads sync note: {sync_res.get('error')}")
+
+                # Save history job record to Supabase
+                save_scrape_job_to_supabase({
+                    "id": job_id,
+                    "keyword": params.get("keyword", ""),
+                    "city": params.get("city", ""),
+                    "depth": params.get("depth", 5),
+                    "status": "ok",
+                    "stage": "Completed",
+                    "started_at": job_meta.get("started_at"),
+                    "completed_at": time.time(),
+                    "leads": cleaned_leads,
+                    "metrics": {
+                        "total": len(cleaned_leads),
+                        "hot": hot_cnt,
+                        "warm": warm_cnt,
+                        "cold": cold_cnt,
+                        "with_email": email_cnt,
+                        "with_phone": phone_cnt,
+                        "skipped_previous": len(skipped_previous)
+                    },
+                    "params": params
+                })
             except Exception as se:
                 print(f"[Supabase] Cloud sync warning: {se}. Leads safely saved to Local DB.")
 
@@ -374,7 +405,7 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             })
             return
 
-        if path == "/api/jobs":
+        if path in ("/api/jobs", "/api/history"):
             # List past and current jobs
             jobs = []
             with JOB_LOCK:
@@ -421,7 +452,24 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                 print(f"[history error] {e}")
 
             jobs.sort(key=lambda x: x.get("started_at", 0), reverse=True)
-            self._send_json({"jobs": jobs})
+
+            # Enrich and merge with Supabase Cloud history
+            if is_supabase_configured():
+                try:
+                    sb_jobs = fetch_history_from_supabase()
+                    for sj in sb_jobs:
+                        s_id = sj.get("id")
+                        existing = next((x for x in jobs if x["id"] == s_id), None)
+                        if existing:
+                            existing["supabase_synced"] = True
+                        else:
+                            sj["supabase_synced"] = True
+                            jobs.append(sj)
+                except Exception as sbe:
+                    print(f"[Supabase history check error] {sbe}")
+
+            jobs.sort(key=lambda x: x.get("started_at", 0), reverse=True)
+            self._send_json({"jobs": jobs, "supabase_connected": is_supabase_configured()})
             return
 
         if path.startswith("/api/job/") and path.endswith("/status"):
@@ -454,6 +502,31 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                         }
                         with JOB_LOCK:
                             JOB_CACHE[job_id] = job_info
+                elif is_supabase_configured():
+                    # Check in Supabase Cloud
+                    try:
+                        sb_leads = fetch_leads_for_job_from_supabase(job_id)
+                        if sb_leads:
+                            job_info = {
+                                "id": job_id,
+                                "status": "ok",
+                                "stage": "Loaded from Supabase Cloud",
+                                "progress_percent": 100,
+                                "leads": sb_leads,
+                                "params": {},
+                                "metrics": {
+                                    "total": len(sb_leads),
+                                    "hot": sum(1 for l in sb_leads if l.get("lead_tier") == "HOT"),
+                                    "warm": sum(1 for l in sb_leads if l.get("lead_tier") == "WARM"),
+                                    "cold": sum(1 for l in sb_leads if l.get("lead_tier") == "COLD"),
+                                    "with_email": sum(1 for l in sb_leads if l.get("emails")),
+                                    "with_phone": sum(1 for l in sb_leads if l.get("clean_phone"))
+                                }
+                            }
+                            with JOB_LOCK:
+                                JOB_CACHE[job_id] = job_info
+                    except Exception as sbe:
+                        print(f"[Supabase job status fetch error] {sbe}")
 
             if not job_info:
                 self._send_json({"error": "Job not found"}, 404)
@@ -798,6 +871,17 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
 
             res = sync_supabase_leads(leads_to_sync, job_id=job_id)
             self._send_json(res)
+            return
+
+        if path == "/api/history/sync-all":
+            res = sync_all_history_to_supabase(DATA_DIR)
+            self._send_json({
+                "success": True,
+                "message": f"Successfully synced {res.get('jobs_synced', 0)} scrape jobs and {res.get('leads_synced', 0)} leads to Supabase.",
+                "jobs_synced": res.get("jobs_synced", 0),
+                "leads_synced": res.get("leads_synced", 0),
+                "errors": res.get("errors", [])
+            })
             return
 
         self._send_json({"error": "Endpoint not found"}, 404)

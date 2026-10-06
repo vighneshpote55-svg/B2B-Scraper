@@ -1738,6 +1738,30 @@ Lead Partnerships Team`;
     });
     btnCloseDrawer.addEventListener('click', closeHistoryDrawer);
     drawerBackdrop.addEventListener('click', closeHistoryDrawer);
+
+    const btnSyncAllHistory = document.getElementById('btn-sync-all-history');
+    if (btnSyncAllHistory) {
+      btnSyncAllHistory.addEventListener('click', async () => {
+        addMicroBounce(btnSyncAllHistory);
+        btnSyncAllHistory.disabled = true;
+        btnSyncAllHistory.innerHTML = '<span>⏳ Syncing all archives...</span>';
+        try {
+          const res = await fetch('/api/history/sync-all', { method: 'POST' });
+          const data = await res.json();
+          if (data.success) {
+            showToast(data.message || 'All history synced to Supabase!', 'success');
+            openHistoryDrawer();
+          } else {
+            showToast(`Sync failed: ${data.error}`, 'error');
+          }
+        } catch (err) {
+          showToast(`Sync failed: ${err.message}`, 'error');
+        } finally {
+          btnSyncAllHistory.disabled = false;
+          btnSyncAllHistory.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg><span>☁️ Sync All History to Supabase</span>';
+        }
+      });
+    }
   }
 
   async function openHistoryDrawer() {
@@ -1767,10 +1791,14 @@ Lead Partnerships Team`;
         const title = j.keyword ? `${j.keyword} (${j.city || 'area'})` : `Job ${j.id.substring(0, 8)}`;
         const total = j.metrics ? j.metrics.total : 0;
         const hot = j.metrics ? j.metrics.hot : 0;
+        const isCloud = j.supabase_synced || j.source === 'supabase_history_table' || j.source === 'supabase_leads_table';
 
         return `
-          <div class="history-item" data-job-id="${j.id}">
-            <h4>${escapeHtml(title)}</h4>
+          <div class="history-item ${isCloud ? 'is-cloud-synced' : ''}" data-job-id="${j.id}">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem;">
+              <h4>${escapeHtml(title)}</h4>
+              ${isCloud ? '<span class="history-cloud-tag" title="Saved in Supabase Cloud">☁️ Supabase</span>' : ''}
+            </div>
             <div class="history-meta">
               <span>${total} leads (${hot} 🔥 hot)</span>
               <span>Status: ${escapeHtml(j.status)}</span>
@@ -2015,7 +2043,8 @@ Lead Partnerships Team`;
     // Copy SQL Schema Button
     btnCopySql.addEventListener('click', async () => {
       addMicroBounce(btnCopySql);
-      const sqlSchema = `-- LeadMap Pro Supabase Schema
+      const sqlSchema = `-- LeadMap Pro Supabase Complete Schema
+-- 1. Leads Table
 CREATE TABLE IF NOT EXISTS public.leads (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at TIMESTAMPTZ DEFAULT now(),
@@ -2040,14 +2069,42 @@ CREATE TABLE IF NOT EXISTS public.leads (
     facebook TEXT,
     linkedin TEXT
 );
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_phone_domain ON public.leads (clean_phone, domain)
 WHERE clean_phone IS NOT NULL AND clean_phone != '' AND domain IS NOT NULL AND domain != '';
+
 ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow anon read and insert on leads" ON public.leads FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);`;
+CREATE POLICY "Allow anon read and insert on leads" ON public.leads FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+
+-- 2. Scrape History Table
+CREATE TABLE IF NOT EXISTS public.scrape_history (
+    id TEXT PRIMARY KEY,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    started_at BIGINT,
+    completed_at BIGINT,
+    keyword TEXT,
+    city TEXT,
+    depth INTEGER DEFAULT 5,
+    status TEXT DEFAULT 'ok',
+    stage TEXT,
+    leads_count INTEGER DEFAULT 0,
+    hot_count INTEGER DEFAULT 0,
+    warm_count INTEGER DEFAULT 0,
+    cold_count INTEGER DEFAULT 0,
+    email_count INTEGER DEFAULT 0,
+    phone_count INTEGER DEFAULT 0,
+    skipped_previous_count INTEGER DEFAULT 0,
+    metrics JSONB DEFAULT '{}'::jsonb,
+    params JSONB DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX IF NOT EXISTS idx_history_created_at ON public.scrape_history (created_at DESC);
+ALTER TABLE public.scrape_history ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow anon read and write on scrape_history" ON public.scrape_history FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);`;
       try {
         await navigator.clipboard.writeText(sqlSchema);
         btnCopySql.textContent = 'Copied! ✔';
-        showToast('SQL Schema copied to clipboard!', 'success');
+        showToast('Full SQL Schema copied to clipboard!', 'success');
         setTimeout(() => { btnCopySql.textContent = 'Copy SQL'; }, 2500);
       } catch {
         showToast('Failed to copy to clipboard', 'error');

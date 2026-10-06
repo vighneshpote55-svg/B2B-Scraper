@@ -223,6 +223,268 @@ def sync_leads(leads, job_id="", supabase_url=None, supabase_key=None, table=Non
     return {"success": True, "count": total_synced, "message": f"Successfully synced {total_synced} leads to Supabase table '{table_name}'."}
 
 
+def save_scrape_job_to_supabase(job_info: dict, supabase_url=None, supabase_key=None, history_table="scrape_history"):
+    """Store scrape job metadata into Supabase scrape_history table."""
+    import time
+    url = (supabase_url or os.environ.get("SUPABASE_URL", "")).strip().rstrip("/")
+    key = (supabase_key or os.environ.get("SUPABASE_KEY", "")).strip()
+
+    if not (url and key):
+        return {"success": False, "error": "Supabase credentials not configured in .env."}
+
+    job_id = job_info.get("id") or job_info.get("job_id")
+    if not job_id:
+        return {"success": False, "error": "Missing job id."}
+
+    metrics = job_info.get("metrics") or {}
+    params = job_info.get("params") or {}
+    keyword = job_info.get("keyword") or params.get("keyword") or ""
+    city = job_info.get("city") or params.get("city") or ""
+    depth = int(params.get("depth") or 5)
+    status = job_info.get("status") or "ok"
+    stage = job_info.get("stage") or "Completed"
+    started_at = int(job_info.get("started_at") or time.time())
+    completed_at = int(job_info.get("completed_at") or time.time())
+    leads_count = int(metrics.get("total") or len(job_info.get("leads") or []))
+
+    record = {
+        "id": str(job_id),
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "keyword": keyword,
+        "city": city,
+        "depth": depth,
+        "status": status,
+        "stage": stage,
+        "leads_count": leads_count,
+        "hot_count": int(metrics.get("hot") or 0),
+        "warm_count": int(metrics.get("warm") or 0),
+        "cold_count": int(metrics.get("cold") or 0),
+        "email_count": int(metrics.get("with_email") or 0),
+        "phone_count": int(metrics.get("with_phone") or 0),
+        "skipped_previous_count": int(metrics.get("skipped_previous") or 0),
+        "metrics": metrics,
+        "params": params
+    }
+
+    endpoint = f"{url}/rest/v1/{history_table}"
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates,return=representation",
+        "User-Agent": "LeadMap-Pro-Supabase/1.0"
+    }
+
+    data = json.dumps([record]).encode("utf-8")
+    req = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status in (200, 201):
+                return {"success": True, "message": f"Job {job_id} saved to Supabase '{history_table}'."}
+            return {"success": True, "message": f"Status: {resp.status}"}
+    except urllib.error.HTTPError as e:
+        err_msg = e.read().decode("utf-8", "replace")
+        if e.code == 404:
+            return {"success": False, "error": f"Table '{history_table}' does not exist in Supabase yet. Run updated supabase_schema.sql in Supabase SQL editor.", "table_missing": True}
+        return {"success": False, "error": f"HTTP {e.code}: {err_msg}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def fetch_history_from_supabase(supabase_url=None, supabase_key=None, history_table="scrape_history"):
+    """Retrieve past scrape jobs from Supabase.
+    
+    Tries public.scrape_history table first. If not found (404),
+    falls back to aggregating past jobs directly from public.leads table.
+    """
+    url = (supabase_url or os.environ.get("SUPABASE_URL", "")).strip().rstrip("/")
+    key = (supabase_key or os.environ.get("SUPABASE_KEY", "")).strip()
+
+    if not (url and key):
+        return []
+
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "User-Agent": "LeadMap-Pro-Supabase/1.0"
+    }
+
+    # 1. Try dedicated history table
+    endpoint = f"{url}/rest/v1/{history_table}?select=*&order=started_at.desc&limit=100"
+    try:
+        req = urllib.request.Request(endpoint, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            if resp.status in (200, 206):
+                rows = json.loads(resp.read().decode("utf-8"))
+                jobs = []
+                for r in rows:
+                    jobs.append({
+                        "id": r.get("id"),
+                        "status": r.get("status") or "ok",
+                        "stage": r.get("stage") or "Loaded from Supabase Cloud",
+                        "progress_percent": 100,
+                        "started_at": r.get("started_at") or 0,
+                        "completed_at": r.get("completed_at") or 0,
+                        "keyword": r.get("keyword") or "",
+                        "city": r.get("city") or "",
+                        "metrics": r.get("metrics") or {
+                            "total": r.get("leads_count") or 0,
+                            "hot": r.get("hot_count") or 0,
+                            "warm": r.get("warm_count") or 0,
+                            "cold": r.get("cold_count") or 0,
+                            "with_email": r.get("email_count") or 0,
+                            "with_phone": r.get("phone_count") or 0
+                        },
+                        "params": r.get("params") or {},
+                        "source": "supabase_history_table"
+                    })
+                return jobs
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            print(f"[Supabase history fetch error] HTTP {e.code}", file=sys.stderr)
+    except Exception as e:
+        print(f"[Supabase history fetch error] {e}", file=sys.stderr)
+
+    # 2. Fallback: Aggregate from public.leads table
+    try:
+        leads_endpoint = f"{url}/rest/v1/leads?select=job_id,created_at,category,title,clean_phone,emails,lead_tier,address&order=created_at.desc&limit=1000"
+        req = urllib.request.Request(leads_endpoint, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status in (200, 206):
+                leads = json.loads(resp.read().decode("utf-8"))
+                groups = {}
+                for l in leads:
+                    jid = l.get("job_id") or "unassigned"
+                    if jid not in groups:
+                        groups[jid] = {
+                            "id": jid,
+                            "leads": [],
+                            "created_at": l.get("created_at"),
+                            "category": l.get("category") or "",
+                            "sample_title": l.get("title") or ""
+                        }
+                    groups[jid]["leads"].append(l)
+
+                import datetime
+                jobs = []
+                for jid, g in groups.items():
+                    gleads = g["leads"]
+                    ts = 0
+                    if g.get("created_at"):
+                        try:
+                            clean_dt = g["created_at"].replace("Z", "+00:00")
+                            dt = datetime.datetime.fromisoformat(clean_dt)
+                            ts = int(dt.timestamp())
+                        except Exception:
+                            ts = 0
+
+                    jobs.append({
+                        "id": jid,
+                        "status": "ok",
+                        "stage": "Synced in Supabase Cloud",
+                        "progress_percent": 100,
+                        "started_at": ts,
+                        "keyword": g.get("category") or g.get("sample_title") or "Leads Search",
+                        "city": "Cloud Archive",
+                        "metrics": {
+                            "total": len(gleads),
+                            "hot": sum(1 for x in gleads if x.get("lead_tier") == "HOT"),
+                            "warm": sum(1 for x in gleads if x.get("lead_tier") == "WARM"),
+                            "cold": sum(1 for x in gleads if x.get("lead_tier") == "COLD"),
+                            "with_email": sum(1 for x in gleads if x.get("emails")),
+                            "with_phone": sum(1 for x in gleads if x.get("clean_phone"))
+                        },
+                        "source": "supabase_leads_table"
+                    })
+                return jobs
+    except Exception as e:
+        print(f"[Supabase leads fallback error] {e}", file=sys.stderr)
+
+    return []
+
+
+def fetch_leads_for_job_from_supabase(job_id: str, supabase_url=None, supabase_key=None):
+    """Retrieve full lead records from Supabase for a given job_id."""
+    url = (supabase_url or os.environ.get("SUPABASE_URL", "")).strip().rstrip("/")
+    key = (supabase_key or os.environ.get("SUPABASE_KEY", "")).strip()
+
+    if not (url and key and job_id):
+        return []
+
+    endpoint = f"{url}/rest/v1/leads?job_id=eq.{urllib.parse.quote(str(job_id))}&order=lead_score.desc"
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "User-Agent": "LeadMap-Pro-Supabase/1.0"
+    }
+
+    try:
+        req = urllib.request.Request(endpoint, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status in (200, 206):
+                return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        print(f"[Supabase fetch leads error] {e}", file=sys.stderr)
+    return []
+
+
+def sync_all_history_to_supabase(data_dir: str):
+    """Iterate through all local data/leads_*.json files and upload both the job history and the leads to Supabase."""
+    import glob
+    results = {"jobs_synced": 0, "leads_synced": 0, "errors": []}
+    if not data_dir or not os.path.isdir(data_dir):
+        return results
+
+    for filepath in sorted(glob.glob(os.path.join(data_dir, "leads_*.json")), reverse=True):
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            job_id = data.get("job_id")
+            if not job_id:
+                fn = os.path.basename(filepath)
+                job_id = fn[6:-5]
+
+            leads = data.get("leads", [])
+            params = data.get("params", {})
+            completed_at = data.get("completed_at", 0)
+
+            # Sync leads
+            if leads:
+                l_res = sync_leads(leads, job_id=job_id)
+                if l_res.get("success"):
+                    results["leads_synced"] += l_res.get("count", len(leads))
+
+            # Sync history job
+            j_info = {
+                "id": job_id,
+                "keyword": params.get("keyword", ""),
+                "city": params.get("city", ""),
+                "depth": params.get("depth", 5),
+                "status": "ok",
+                "stage": "Loaded from archive",
+                "started_at": completed_at,
+                "completed_at": completed_at,
+                "metrics": {
+                    "total": len(leads),
+                    "hot": sum(1 for l in leads if l.get("lead_tier") == "HOT"),
+                    "warm": sum(1 for l in leads if l.get("lead_tier") == "WARM"),
+                    "cold": sum(1 for l in leads if l.get("lead_tier") == "COLD"),
+                    "with_email": sum(1 for l in leads if l.get("emails")),
+                    "with_phone": sum(1 for l in leads if l.get("clean_phone"))
+                },
+                "params": params
+            }
+            save_scrape_job_to_supabase(j_info)
+            results["jobs_synced"] += 1
+        except Exception as e:
+            results["errors"].append(f"{os.path.basename(filepath)}: {str(e)}")
+
+    return results
+
+
 if __name__ == "__main__":
     url, key, tbl = get_config()
     print("Testing Supabase connection...")
@@ -233,6 +495,9 @@ if __name__ == "__main__":
     ok, msg = test_connection(url, key, tbl)
     if ok:
         print(f"✔ {msg}")
+        print("Testing history fetch from Supabase...")
+        hist = fetch_history_from_supabase()
+        print(f"Found {len(hist)} historical jobs in Supabase.")
     else:
         print(f"✗ {msg}")
         sys.exit(1)
