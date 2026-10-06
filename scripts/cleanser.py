@@ -8,6 +8,9 @@ Features:
 - Lead scoring (0-100) and tiering (HOT 🔥, WARM ⚡, COLD ❄️).
 - Deduplication across leads based on phone, domain, or address.
 """
+import glob
+import json
+import os
 import re
 import urllib.parse
 import urllib.request
@@ -397,3 +400,123 @@ def enrich_socials(leads: list, max_workers: int = 6) -> list:
         list(executor.map(_worker, to_scan))
 
     return leads
+
+
+def load_historical_leads(data_dir: str, exclude_job_id: str = "") -> list:
+    """Load all leads from past scrape JSON files in data_dir."""
+    historical = []
+    if not data_dir or not os.path.isdir(data_dir):
+        return historical
+
+    for filepath in glob.glob(os.path.join(data_dir, "leads_*.json")):
+        filename = os.path.basename(filepath)
+        job_id = filename[6:-5] if filename.startswith("leads_") and filename.endswith(".json") else ""
+        if exclude_job_id and job_id == exclude_job_id:
+            continue
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                leads = data.get("leads", [])
+                if isinstance(leads, list):
+                    historical.extend(leads)
+        except Exception:
+            continue
+    return historical
+
+
+def filter_previously_seen_leads(leads: list, historical_leads: list) -> tuple:
+    """Filter out leads that already exist in historical_leads.
+
+    Matches on:
+    - place_id (Google unique Place ID)
+    - cid (Google Customer ID)
+    - phone / clean_phone digits (last 10 digits)
+    - domain (excluding generic hosting/social domains)
+    - normalized title + address
+
+    Returns:
+        (new_leads, skipped_leads)
+    """
+    seen_place_ids = set()
+    seen_cids = set()
+    seen_phones = set()
+    seen_domains = set()
+    seen_idents = set()
+
+    GENERIC_DOMAINS = {
+        "facebook.com", "instagram.com", "linkedin.com", "twitter.com",
+        "google.com", "wix.com", "wordpress.com", "site123.com", "weebly.com",
+        "wa.me", "api.whatsapp.com", "youtube.com"
+    }
+
+    for item in historical_leads:
+        pid = item.get("place_id") or ""
+        cid = str(item.get("cid") or "")
+        phone = item.get("clean_phone") or item.get("phone") or ""
+        domain = (item.get("domain") or "").lower()
+        title = (item.get("title") or "").strip().lower()
+        address = (item.get("address") or "").strip().lower()
+
+        if pid:
+            seen_place_ids.add(pid)
+        if cid and cid != "0":
+            seen_cids.add(cid)
+        if phone:
+            digits = re.sub(r"[^\d]", "", str(phone))
+            if len(digits) >= 8:
+                seen_phones.add(digits[-10:])
+        if domain and domain not in GENERIC_DOMAINS:
+            seen_domains.add(domain)
+        if title and address:
+            seen_idents.add(f"{title}|{address}")
+
+    new_leads = []
+    skipped_leads = []
+
+    for item in leads:
+        pid = item.get("place_id") or ""
+        cid = str(item.get("cid") or "")
+        phone = item.get("clean_phone") or item.get("phone") or ""
+        domain = (item.get("domain") or "").lower()
+        title = (item.get("title") or "").strip().lower()
+        address = (item.get("address") or "").strip().lower()
+        ident = f"{title}|{address}"
+
+        phone_digits = re.sub(r"[^\d]", "", str(phone))[-10:] if phone else ""
+
+        is_duplicate = False
+        duplicate_reason = ""
+
+        if pid and pid in seen_place_ids:
+            is_duplicate = True
+            duplicate_reason = "Already in past scrape (matched Google Place ID)"
+        elif cid and cid != "0" and cid in seen_cids:
+            is_duplicate = True
+            duplicate_reason = "Already in past scrape (matched Google CID)"
+        elif phone_digits and len(phone_digits) >= 8 and phone_digits in seen_phones:
+            is_duplicate = True
+            duplicate_reason = "Already in past scrape (matched Phone number)"
+        elif domain and domain not in GENERIC_DOMAINS and domain in seen_domains:
+            is_duplicate = True
+            duplicate_reason = "Already in past scrape (matched Website domain)"
+        elif ident and ident != "|" and ident in seen_idents:
+            is_duplicate = True
+            duplicate_reason = "Already in past scrape (matched Name & Address)"
+
+        if is_duplicate:
+            item_copy = dict(item)
+            item_copy["is_new"] = False
+            item_copy["duplicate_reason"] = duplicate_reason
+            skipped_leads.append(item_copy)
+        else:
+            item["is_new"] = True
+            new_leads.append(item)
+            # Add to local sets so within this batch it doesn't duplicate
+            if pid: seen_place_ids.add(pid)
+            if cid and cid != "0": seen_cids.add(cid)
+            if phone_digits and len(phone_digits) >= 8: seen_phones.add(phone_digits)
+            if domain and domain not in GENERIC_DOMAINS: seen_domains.add(domain)
+            if ident and ident != "|": seen_idents.add(ident)
+
+    return new_leads, skipped_leads
+

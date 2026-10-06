@@ -46,12 +46,21 @@ if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
 
 try:
-    from scripts.cleanser import clean_lead, deduplicate_leads, extract_domain, enrich_socials
+    from scripts.cleanser import (
+        clean_lead,
+        deduplicate_leads,
+        extract_domain,
+        enrich_socials,
+        load_historical_leads,
+        filter_previously_seen_leads
+    )
 except ImportError:
     clean_lead = lambda x: x
     deduplicate_leads = lambda x: x
     extract_domain = lambda x: ""
     enrich_socials = lambda x: x
+    load_historical_leads = lambda *args, **kwargs: []
+    filter_previously_seen_leads = lambda leads, hist: (leads, [])
 
 try:
     from scripts.supabase_client import (
@@ -210,11 +219,22 @@ def background_job_processor(job_id, params):
             cleaned_lead = clean_lead(lead)
             cleaned_leads.append(cleaned_lead)
 
-        # Deduplicate
+        # Deduplicate within current run
         cleaned_leads = deduplicate_leads(cleaned_leads)
 
+        # Cross-job historical deduplication
+        exclude_seen = params.get("exclude_seen", True)
+        skipped_previous = []
+        if exclude_seen:
+            historical_leads = load_historical_leads(DATA_DIR, exclude_job_id=job_id)
+            new_leads, skipped_previous = filter_previously_seen_leads(cleaned_leads, historical_leads)
+            cleaned_leads = new_leads
+        else:
+            historical_leads = load_historical_leads(DATA_DIR, exclude_job_id=job_id)
+            _, skipped_previous = filter_previously_seen_leads(cleaned_leads, historical_leads)
+
         # Enrich social profiles (Instagram / Facebook / LinkedIn) from websites
-        if params.get("socials", True):
+        if params.get("socials", True) and cleaned_leads:
             with JOB_LOCK:
                 JOB_CACHE[job_id]["stage"] = "Scanning websites for Instagram, Facebook, and LinkedIn profiles..."
                 JOB_CACHE[job_id]["progress_percent"] = 96
@@ -227,7 +247,13 @@ def background_job_processor(job_id, params):
                 "job_id": job_id,
                 "params": params,
                 "completed_at": time.time(),
-                "leads": cleaned_leads
+                "leads": cleaned_leads,
+                "skipped_previous_count": len(skipped_previous),
+                "metrics": {
+                    "total": len(cleaned_leads),
+                    "skipped_previous": len(skipped_previous),
+                    "raw_extracted": len(cleaned_leads) + len(skipped_previous)
+                }
             }, f, indent=2)
 
         # Count metrics
@@ -252,12 +278,21 @@ def background_job_processor(job_id, params):
             except Exception as se:
                 print(f"[Supabase] Cloud sync warning: {se}. Leads safely saved to Local DB.")
 
+        stage_desc = f"Complete! {len(cleaned_leads)} new leads ready"
+        if skipped_previous:
+            stage_desc += f" ({len(skipped_previous)} previously scraped leads skipped)"
+        if not cleaned_leads and skipped_previous:
+            stage_desc = f"All {len(skipped_previous)} leads were already collected in past searches! Increase Scroll Depth to crawl deeper for new leads."
+        if supabase_synced:
+            stage_desc += f" ({supabase_synced} synced to Supabase)"
+
         with JOB_LOCK:
             JOB_CACHE[job_id].update({
                 "status": "ok",
                 "progress_percent": 100,
-                "stage": f"Complete! {len(cleaned_leads)} leads ready" + (f" ({supabase_synced} synced to Supabase)" if supabase_synced else "."),
+                "stage": stage_desc,
                 "leads": cleaned_leads,
+                "skipped_previous_count": len(skipped_previous),
                 "metrics": {
                     "total": len(cleaned_leads),
                     "hot": hot_cnt,
@@ -265,7 +300,9 @@ def background_job_processor(job_id, params):
                     "cold": cold_cnt,
                     "with_email": email_cnt,
                     "with_phone": phone_cnt,
-                    "supabase_synced": supabase_synced
+                    "supabase_synced": supabase_synced,
+                    "skipped_previous": len(skipped_previous),
+                    "raw_extracted": len(cleaned_leads) + len(skipped_previous)
                 }
             })
 
@@ -541,6 +578,7 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             depth = int(params.get("depth", 5))
             extract_email = bool(params.get("email", True))
             find_socials = bool(params.get("socials", True))
+            exclude_seen = bool(params.get("exclude_seen", True))
             lat = params.get("lat")
             lon = params.get("lon")
 
@@ -607,6 +645,7 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                 "depth": depth,
                 "email": extract_email,
                 "socials": find_socials,
+                "exclude_seen": exclude_seen,
                 "max_time": 600
             }
             t = threading.Thread(target=background_job_processor, args=(job_id, job_params), daemon=True)

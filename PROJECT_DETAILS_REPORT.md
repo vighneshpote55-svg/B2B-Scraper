@@ -259,8 +259,8 @@ LeadMap Pro is designed to operate with **$0 in API fees**:
   - `clean_emails()`: Filters out asset extensions (`.png`, `.svg`), placeholder addresses (`user@domain.com`), and bot/sentry emails (`sentry@wix.com`, `noreply@`), sorting domain-matching addresses first.
   - `clean_phone()`: Normalizes digits into standard international formats (`+91 XXXXX XXXXX` for India, `+1 (XXX) XXX-XXXX` for North America).
   - `clean_social_url()`: Removes tracking parameters (`?igshid=`, `?ref=`) from social URLs.
-  - `score_lead()`: Computes the 0–100 quality score and assigns tiers (HOT, WARM, COLD).
-  - `deduplicate_leads()`: Deduplicates listings across phone numbers, root domains, and `title|address` hashes.
+  - `deduplicate_leads()`: Deduplicates listings within a single extraction batch.
+  - `load_historical_leads()` & `filter_previously_seen_leads()`: Cross-job incremental deduplication engine. Automatically cross-references incoming scrape listings against past data archives (`data/leads_*.json`) matching Google Place ID, Google CID, verified phone numbers, root domains, and normalized title+address to ensure previously scraped businesses are not repeated and only newly discovered leads are saved.
   - `enrich_socials()`: Uses a `ThreadPoolExecutor` (6 workers) to fetch business homepages with an 8-second timeout, extracting Instagram, Facebook, and LinkedIn links via regex.
 
 #### [`scripts/scrape.py`](file:///home/vighnesh/Documents/B2B/scripts/scrape.py)

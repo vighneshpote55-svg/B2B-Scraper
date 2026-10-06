@@ -34,13 +34,15 @@ if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
 
 try:
-    from scripts.cleanser import clean_lead, deduplicate_leads
+    from scripts.cleanser import clean_lead, deduplicate_leads, load_historical_leads, filter_previously_seen_leads
 except ImportError:
     try:
-        from cleanser import clean_lead, deduplicate_leads
+        from cleanser import clean_lead, deduplicate_leads, load_historical_leads, filter_previously_seen_leads
     except ImportError:
         clean_lead = lambda x: x
         deduplicate_leads = lambda x: x
+        load_historical_leads = lambda *args, **kwargs: []
+        filter_previously_seen_leads = lambda leads, hist: (leads, [])
 
 BASE = os.environ.get("SCRAPER_BASE_URL", "http://localhost:8080")
 KEY = os.environ.get("SCRAPER_API_KEY", "")
@@ -174,6 +176,10 @@ def main():
                     help="include lead scoring (0-100) and tier (HOT/WARM/COLD) in output (default: ON)")
     ap.add_argument("--no-score", dest="score", action="store_false",
                     help="disable lead scoring columns")
+    ap.add_argument("--exclude-seen", dest="exclude_seen", action="store_true", default=True,
+                    help="exclude businesses already collected in past searches (default: ON)")
+    ap.add_argument("--no-exclude-seen", dest="exclude_seen", action="store_false",
+                    help="allow duplicate businesses from past searches")
     a = ap.parse_args()
 
     keywords = collect_keywords(a)
@@ -264,6 +270,18 @@ def main():
         results = deduplicate_leads(results)
         if len(results) < before_count:
             print(f"  removed {before_count - len(results)} duplicate business listing(s)")
+
+        if a.exclude_seen:
+            data_dir = os.path.join(_repo_root, "data")
+            historical = load_historical_leads(data_dir, exclude_job_id=job_id)
+            if historical:
+                new_res, skipped = filter_previously_seen_leads(results, historical)
+                results = new_res
+                if skipped:
+                    print(f"  🛡️ Excluded {len(skipped)} previously collected lead(s) from past searches (keeping {len(results)} brand-new).")
+                if not results:
+                    print("  ⚠️ All extracted listings were already collected in your previous searches!")
+                    print("     Tip: Increase --depth (e.g. --depth 10 or 15) to uncover new businesses deeper in the map.")
 
     if a.score and a.clean:
         if "lead_tier" not in fields:

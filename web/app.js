@@ -39,6 +39,8 @@
   const toggleClean = document.getElementById('toggle-clean');
   const toggleScore = document.getElementById('toggle-score');
   const toggleSocials = document.getElementById('toggle-socials');
+  const toggleExcludeSeen = document.getElementById('toggle-exclude-seen');
+  const dedupeNoticeBanner = document.getElementById('dedupe-notice-banner');
   const btnSubmitScrape = document.getElementById('btn-submit-scrape');
   const btnSubmitText = document.getElementById('btn-submit-text');
 
@@ -548,7 +550,8 @@
         email: toggleEmail.checked,
         clean: toggleClean.checked,
         score: toggleScore.checked,
-        socials: toggleSocials ? toggleSocials.checked : true
+        socials: toggleSocials ? toggleSocials.checked : true,
+        exclude_seen: toggleExcludeSeen ? toggleExcludeSeen.checked : true
       });
     });
 
@@ -747,6 +750,31 @@
       const data = await res.json();
       allLeads = data.leads || [];
       currentJobId = jobId;
+
+      // Check status to display incremental deduplication notice
+      try {
+        const sRes = await fetch(`/api/job/${jobId}/status`);
+        if (sRes.ok) {
+          const sData = await sRes.json();
+          const skippedCount = sData.skipped_previous_count || (sData.metrics && sData.metrics.skipped_previous) || 0;
+          if (dedupeNoticeBanner) {
+            if (skippedCount > 0 && allLeads.length > 0) {
+              dedupeNoticeBanner.innerHTML = `🛡️ <strong>Incremental Filter:</strong> Excluded <strong>${skippedCount}</strong> previously collected businesses from past searches. Showing <strong>${allLeads.length} brand-new</strong> leads!`;
+              dedupeNoticeBanner.className = 'dedupe-notice-banner dedupe-notice-success';
+              dedupeNoticeBanner.classList.remove('is-hidden');
+            } else if (skippedCount > 0 && allLeads.length === 0) {
+              dedupeNoticeBanner.innerHTML = `⚡ <strong>All ${skippedCount} businesses were already collected in your previous searches!</strong> No duplicate leads were added.<br>💡 <em>Tip: Increase the Scroll Depth slider (e.g. to 10 or 15) or specify a sub-neighborhood (e.g. "Kothrud, Pune") to crawl deeper for new leads.</em>`;
+              dedupeNoticeBanner.className = 'dedupe-notice-banner dedupe-notice-warning';
+              dedupeNoticeBanner.classList.remove('is-hidden');
+            } else {
+              dedupeNoticeBanner.classList.add('is-hidden');
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Could not fetch status banner:', e);
+      }
+
       updateMetrics();
       renderTable();
     } catch (err) {
@@ -1416,16 +1444,29 @@ Lead Partnerships Team`;
     tableShowingText.textContent = `Showing ${filtered.length} of ${allLeads.length} leads`;
 
     if (filtered.length === 0) {
-      leadsTableBody.innerHTML = `
-        <tr class="empty-state-row">
-          <td colspan="8">
-            <div class="empty-state">
-              <div class="empty-state-icon">🔍</div>
-              <h3>No Matching Leads</h3>
-              <p>Try adjusting your search query or filter tab.</p>
-            </div>
-          </td>
-        </tr>`;
+      if (allLeads.length === 0) {
+        leadsTableBody.innerHTML = `
+          <tr class="empty-state-row">
+            <td colspan="8">
+              <div class="empty-state">
+                <div class="empty-state-icon">🛡️</div>
+                <h3>No New Leads in This Run</h3>
+                <p>All extracted businesses were already collected in your previous searches! Increase <strong>Scroll Depth</strong> (e.g. to 10 or 15) or search a specific neighborhood to crawl deeper for new leads.</p>
+              </div>
+            </td>
+          </tr>`;
+      } else {
+        leadsTableBody.innerHTML = `
+          <tr class="empty-state-row">
+            <td colspan="8">
+              <div class="empty-state">
+                <div class="empty-state-icon">🔍</div>
+                <h3>No Matching Leads</h3>
+                <p>Try adjusting your search query or filter tab.</p>
+              </div>
+            </td>
+          </tr>`;
+      }
       return;
     }
 

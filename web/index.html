@@ -109,10 +109,11 @@
         </div>
         <div class="quick-preset-chips">
           <span class="preset-label">Quick search:</span>
-          <button type="button" class="chip-preset" data-keyword="Dentists" data-city="Denver, CO">🦷 Dentists (Denver)</button>
-          <button type="button" class="chip-preset" data-keyword="Gyms & Fitness" data-city="Miami, FL">💪 Gyms (Miami)</button>
-          <button type="button" class="chip-preset" data-keyword="Roofing Contractors" data-city="Austin, TX">🏠 Roofing (Austin)</button>
-          <button type="button" class="chip-preset" data-keyword="Coffee Shops" data-city="Seattle, WA">☕ Cafes (Seattle)</button>
+          <button type="button" class="chip-preset" data-keyword="Hospitals" data-city="Pune, Maharashtra">🏥 Hospitals (Pune)</button>
+          <button type="button" class="chip-preset" data-keyword="Dentists" data-city="Shivajinagar, Pune">🦷 Dentists (Shivajinagar)</button>
+          <button type="button" class="chip-preset" data-keyword="IT Companies" data-city="Hinjawadi, Pune">💻 IT Companies (Hinjawadi)</button>
+          <button type="button" class="chip-preset" data-keyword="Cafes & Restaurants" data-city="Koregaon Park, Pune">☕ Cafes (Koregaon Park)</button>
+          <button type="button" class="chip-preset" data-keyword="Gyms & Fitness" data-city="Kothrud, Pune">💪 Gyms (Kothrud)</button>
         </div>
       </div>
 
@@ -129,7 +130,7 @@
               id="input-keyword" 
               name="keyword" 
               class="form-input" 
-              placeholder="e.g. Commercial HVAC, Dermatologists, Italian Restaurants" 
+              placeholder="e.g. Hospitals, Dentists, IT Companies, Restaurants" 
               required
               autocomplete="off"
             >
@@ -146,7 +147,8 @@
               id="input-city" 
               name="city" 
               class="form-input" 
-              placeholder="e.g. Dallas, TX or Chicago, IL" 
+              placeholder="e.g. Pune, Maharashtra (Shivajinagar, Kothrud, Baner...)" 
+              value="Pune, Maharashtra"
               required
               autocomplete="off"
             >
@@ -206,6 +208,15 @@
               <span class="toggle-text">
                 <strong>Social Profiles</strong>
                 <small>Scrapes Instagram, Facebook &amp; LinkedIn</small>
+              </span>
+            </label>
+
+            <label class="toggle-control" for="toggle-exclude-seen">
+              <input type="checkbox" id="toggle-exclude-seen" name="exclude_seen" checked>
+              <span class="toggle-switch"></span>
+              <span class="toggle-text">
+                <strong>Only New Leads (Skip Seen)</strong>
+                <small>Excludes businesses saved in past searches</small>
               </span>
             </label>
           </div>
@@ -410,6 +421,9 @@
 
       <!-- Mobile Table Swipe Hint -->
       <div class="mobile-table-hint">⟷ Swipe table horizontally to view phone, emails, and ratings</div>
+
+      <!-- Incremental Scrape Notification Banner -->
+      <div id="dedupe-notice-banner" class="dedupe-notice-banner is-hidden" role="status"></div>
 
       <!-- Table Container -->
       <div class="table-container" id="leads-table-container">
