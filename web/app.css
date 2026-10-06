@@ -3782,11 +3782,33 @@ img, svg, canvas, video {
 
 .auth-gate-tabs {
   display: flex;
+  align-items: center;
   background: rgba(0, 0, 0, 0.45);
   border-radius: 12px;
   padding: 4px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   width: 100%;
+}
+
+.gate-theme-toggle-btn {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  margin-left: 0.25rem;
+}
+
+.gate-theme-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
 }
 
 .input-with-icon {

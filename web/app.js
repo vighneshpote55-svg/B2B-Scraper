@@ -452,56 +452,68 @@
 
   // ── Theme Toggle (Dark / Light / Monochrome Black & White Mode) ───────────
   function setupThemeToggle() {
+    const btnGateThemeToggle = document.getElementById('btn-gate-theme-toggle');
     const urlParams = new URLSearchParams(window.location.search);
     const themeParam = urlParams.get('theme');
     const savedTheme = themeParam || localStorage.getItem('leadmap-theme') || 'dark';
     applyTheme(savedTheme, false);
 
-    if (btnThemeToggle) {
-      btnThemeToggle.addEventListener('click', () => {
-        const current = document.documentElement.getAttribute('data-theme') || 'dark';
-        let nextTheme = 'dark';
-        if (current === 'dark') nextTheme = 'light';
-        else if (current === 'light') nextTheme = 'mono';
-        else nextTheme = 'dark';
+    function triggerThemeToggle() {
+      const current = document.documentElement.getAttribute('data-theme') || 'dark';
+      let nextTheme = 'dark';
+      if (current === 'dark') nextTheme = 'light';
+      else if (current === 'light') nextTheme = 'mono';
+      else nextTheme = 'dark';
 
-        // Tactile spin animation
-        let activeIcon = themeIconSun;
-        if (nextTheme === 'light') activeIcon = themeIconMoon;
-        else if (nextTheme === 'mono') activeIcon = themeIconMono;
+      // Tactile spin animation
+      let activeIcon = themeIconSun;
+      if (nextTheme === 'light') activeIcon = themeIconMoon;
+      else if (nextTheme === 'mono') activeIcon = themeIconMono;
 
-        if (activeIcon) {
-          runAnimation(activeIcon, {
-            rotate: [0, 360],
-            scale: [0.6, 1.15, 1],
-            duration: 420,
-            ease: 'outBack(1.5)'
-          });
-        }
+      if (activeIcon) {
+        runAnimation(activeIcon, {
+          rotate: [0, 360],
+          scale: [0.6, 1.15, 1],
+          duration: 420,
+          ease: 'outBack(1.5)'
+        });
+      }
 
-        applyTheme(nextTheme, true);
-      });
+      applyTheme(nextTheme, true);
     }
+
+    if (btnThemeToggle) btnThemeToggle.addEventListener('click', triggerThemeToggle);
+    if (btnGateThemeToggle) btnThemeToggle.addEventListener('click', triggerThemeToggle);
   }
 
   function applyTheme(theme, showNotification = false) {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('leadmap-theme', theme);
 
+    const gateSun = document.getElementById('gate-theme-icon-sun');
+    const gateMoon = document.getElementById('gate-theme-icon-moon');
+    const gateMono = document.getElementById('gate-theme-icon-mono');
+
     if (themeIconSun) themeIconSun.classList.add('is-hidden');
     if (themeIconMoon) themeIconMoon.classList.add('is-hidden');
     if (themeIconMono) themeIconMono.classList.add('is-hidden');
+    if (gateSun) gateSun.classList.add('is-hidden');
+    if (gateMoon) gateMoon.classList.add('is-hidden');
+    if (gateMono) gateMono.classList.add('is-hidden');
 
     if (theme === 'light') {
       if (themeIconMoon) themeIconMoon.classList.remove('is-hidden');
+      if (gateMoon) gateMoon.classList.remove('is-hidden');
       if (btnThemeToggle) btnThemeToggle.setAttribute('title', 'Switch to Monochrome (Black & White) Mode');
       if (showNotification) showToast('Switched to Light Mode ☀️', 'success');
     } else if (theme === 'mono') {
       if (themeIconMono) themeIconMono.classList.remove('is-hidden');
+      if (gateMono) gateMono.classList.remove('is-hidden');
       if (btnThemeToggle) btnThemeToggle.setAttribute('title', 'Switch to Dark Mode');
       if (showNotification) showToast('Switched to Monochrome (Black & White) Mode ☯️', 'info');
     } else {
       if (themeIconSun) themeIconSun.classList.remove('is-hidden');
+      if (gateSun) gateSun.classList.remove('is-hidden');
       if (btnThemeToggle) btnThemeToggle.setAttribute('title', 'Switch to Light Mode');
       if (showNotification) showToast('Switched to Dark Mode 🌙', 'success');
     }
