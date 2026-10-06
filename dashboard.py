@@ -9,10 +9,12 @@ Provides:
 - Multi-format exports (Standard CSV, CRM / Cold Email Outreach CSV, JSON).
 """
 import csv
+import hashlib
 import io
 import json
 import os
 import re
+import secrets
 import socketserver
 import subprocess
 import sys
@@ -38,7 +40,55 @@ SCRAPER_KEY = os.environ.get("SCRAPER_API_KEY", "")
 PORT = int(os.environ.get("DASHBOARD_PORT", "3000"))
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web")
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+USERS_FILE = os.path.join(DATA_DIR, "users.json")
+SESSIONS_FILE = os.path.join(DATA_DIR, "sessions.json")
 os.makedirs(DATA_DIR, exist_ok=True)
+
+USER_LOCK = threading.Lock()
+
+def _hash_password(password, salt=None):
+    if not salt:
+        salt = secrets.token_hex(16)
+    hashed = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000).hex()
+    return f"{salt}:{hashed}"
+
+def _verify_password(password, stored_password_hash):
+    try:
+        salt, hashed = stored_password_hash.split(":", 1)
+        check = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000).hex()
+        return check == hashed
+    except Exception:
+        return False
+
+def _load_users():
+    with USER_LOCK:
+        if not os.path.isfile(USERS_FILE):
+            return {}
+        try:
+            with open(USERS_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+def _save_users(users):
+    with USER_LOCK:
+        with open(USERS_FILE, "w") as f:
+            json.dump(users, f, indent=2)
+
+def _load_sessions():
+    with USER_LOCK:
+        if not os.path.isfile(SESSIONS_FILE):
+            return {}
+        try:
+            with open(SESSIONS_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+def _save_sessions(sessions):
+    with USER_LOCK:
+        with open(SESSIONS_FILE, "w") as f:
+            json.dump(sessions, f, indent=2)
 
 # Include cleanser module
 _repo_root = os.path.abspath(os.path.dirname(__file__))
@@ -375,6 +425,36 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return super().do_GET()
 
         # REST API Routes
+        if path == "/api/auth/me":
+            auth_header = self.headers.get("Authorization", "")
+            token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else ""
+            if not token:
+                # check query params
+                token = query.get("token", [""])[0]
+            
+            sessions = _load_sessions()
+            user_session = sessions.get(token)
+            if not user_session:
+                self._send_json({"authenticated": False, "user": None})
+                return
+            
+            users = _load_users()
+            user = users.get(user_session.get("email", ""))
+            if not user:
+                self._send_json({"authenticated": False, "user": None})
+                return
+            
+            self._send_json({
+                "authenticated": True,
+                "user": {
+                    "id": user.get("id"),
+                    "name": user.get("name"),
+                    "email": user.get("email"),
+                    "created_at": user.get("created_at")
+                }
+            })
+            return
+
         if path == "/api/status":
             is_healthy = check_scraper_health()
             self._send_json({
@@ -451,7 +531,7 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 print(f"[history error] {e}")
 
-            jobs.sort(key=lambda x: x.get("started_at", 0), reverse=True)
+            jobs.sort(key=lambda x: (x.get("started_at") or 0), reverse=True)
 
             # Enrich and merge with Supabase Cloud history
             if is_supabase_configured():
@@ -468,7 +548,7 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                 except Exception as sbe:
                     print(f"[Supabase history check error] {sbe}")
 
-            jobs.sort(key=lambda x: x.get("started_at", 0), reverse=True)
+            jobs.sort(key=lambda x: (x.get("started_at") or 0), reverse=True)
             self._send_json({"jobs": jobs, "supabase_connected": is_supabase_configured()})
             return
 
@@ -641,6 +721,118 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+
+        if path == "/api/auth/signup":
+            content_length = int(self.headers.get("Content-Length", 0))
+            body_bytes = self.rfile.read(content_length)
+            try:
+                params = json.loads(body_bytes.decode("utf-8"))
+            except Exception:
+                self._send_json({"error": "Invalid JSON payload"}, 400)
+                return
+
+            email = params.get("email", "").strip().lower()
+            password = params.get("password", "").strip()
+            name = params.get("name", "").strip() or email.split("@")[0].capitalize()
+
+            if not email or "@" not in email:
+                self._send_json({"error": "Please enter a valid email address."}, 400)
+                return
+            if not password or len(password) < 6:
+                self._send_json({"error": "Password must be at least 6 characters long."}, 400)
+                return
+
+            users = _load_users()
+            if email in users:
+                self._send_json({"error": "An account with this email already exists. Please sign in."}, 409)
+                return
+
+            user_id = secrets.token_hex(8)
+            password_hash = _hash_password(password)
+            user_obj = {
+                "id": user_id,
+                "name": name,
+                "email": email,
+                "password_hash": password_hash,
+                "created_at": time.time()
+            }
+            users[email] = user_obj
+            _save_users(users)
+
+            token = secrets.token_hex(24)
+            sessions = _load_sessions()
+            sessions[token] = {
+                "email": email,
+                "user_id": user_id,
+                "created_at": time.time()
+            }
+            _save_sessions(sessions)
+
+            self._send_json({
+                "success": True,
+                "message": "Account created successfully!",
+                "token": token,
+                "user": {
+                    "id": user_id,
+                    "name": name,
+                    "email": email
+                }
+            })
+            return
+
+        if path == "/api/auth/login":
+            content_length = int(self.headers.get("Content-Length", 0))
+            body_bytes = self.rfile.read(content_length)
+            try:
+                params = json.loads(body_bytes.decode("utf-8"))
+            except Exception:
+                self._send_json({"error": "Invalid JSON payload"}, 400)
+                return
+
+            email = params.get("email", "").strip().lower()
+            password = params.get("password", "").strip()
+
+            if not email or not password:
+                self._send_json({"error": "Please provide both email and password."}, 400)
+                return
+
+            users = _load_users()
+            user = users.get(email)
+            if not user or not _verify_password(password, user.get("password_hash", "")):
+                self._send_json({"error": "Invalid email or password."}, 401)
+                return
+
+            token = secrets.token_hex(24)
+            sessions = _load_sessions()
+            sessions[token] = {
+                "email": email,
+                "user_id": user.get("id"),
+                "created_at": time.time()
+            }
+            _save_sessions(sessions)
+
+            self._send_json({
+                "success": True,
+                "message": f"Welcome back, {user.get('name')}!",
+                "token": token,
+                "user": {
+                    "id": user.get("id"),
+                    "name": user.get("name"),
+                    "email": user.get("email")
+                }
+            })
+            return
+
+        if path == "/api/auth/logout":
+            auth_header = self.headers.get("Authorization", "")
+            token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else ""
+            if token:
+                sessions = _load_sessions()
+                if token in sessions:
+                    del sessions[token]
+                    _save_sessions(sessions)
+            self._send_json({"success": True, "message": "Logged out successfully."})
+            return
 
         if path == "/api/scrape/start":
             content_length = int(self.headers.get("Content-Length", 0))

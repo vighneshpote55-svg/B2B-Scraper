@@ -430,6 +430,7 @@
     setupBulkActionBar();
     setupMapView();
     setupSupabaseIntegration();
+    setupAuthIntegration();
 
     // Run entrance choreography
     animatePageEntrance();
@@ -2178,6 +2179,212 @@ CREATE POLICY "Allow anon read and write on scrape_history" ON public.scrape_his
         }
       });
     }, 3500);
+  }
+
+  // ── Authentication Integration (Login, Register & Session) ────────────────
+  function setupAuthIntegration() {
+    const btnAuthHeader = document.getElementById('btn-auth-header');
+    const authHeaderLabel = document.getElementById('auth-header-label');
+    const modalAuth = document.getElementById('modal-auth');
+    const btnCloseAuthModal = document.getElementById('btn-close-auth-modal');
+    
+    const tabAuthLogin = document.getElementById('tab-auth-login');
+    const tabAuthRegister = document.getElementById('tab-auth-register');
+    const formAuthLogin = document.getElementById('form-auth-login');
+    const formAuthRegister = document.getElementById('form-auth-register');
+
+    const inputLoginEmail = document.getElementById('input-login-email');
+    const inputLoginPassword = document.getElementById('input-login-password');
+    const authLoginFeedback = document.getElementById('auth-login-feedback');
+    const btnSubmitLogin = document.getElementById('btn-submit-login');
+
+    const inputRegisterName = document.getElementById('input-register-name');
+    const inputRegisterEmail = document.getElementById('input-register-email');
+    const inputRegisterPassword = document.getElementById('input-register-password');
+    const authRegisterFeedback = document.getElementById('auth-register-feedback');
+    const btnSubmitRegister = document.getElementById('btn-submit-register');
+
+    let currentUser = null;
+    let authToken = localStorage.getItem('leadmap_auth_token') || '';
+
+    async function checkAuthSession() {
+      if (!authToken) {
+        updateAuthHeaderUI(null);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/auth/me?token=${encodeURIComponent(authToken)}`);
+        const data = await res.json();
+        if (data.authenticated && data.user) {
+          currentUser = data.user;
+          updateAuthHeaderUI(currentUser);
+        } else {
+          authToken = '';
+          localStorage.removeItem('leadmap_auth_token');
+          updateAuthHeaderUI(null);
+        }
+      } catch (err) {
+        console.warn('Auth session check error:', err);
+      }
+    }
+
+    function updateAuthHeaderUI(user) {
+      if (!btnAuthHeader || !authHeaderLabel) return;
+      if (user) {
+        btnAuthHeader.classList.add('is-logged-in');
+        authHeaderLabel.textContent = user.name || user.email;
+        btnAuthHeader.title = `Signed in as ${user.email} (Click to Sign Out)`;
+      } else {
+        btnAuthHeader.classList.remove('is-logged-in');
+        authHeaderLabel.textContent = 'Sign In';
+        btnAuthHeader.title = 'Sign In or Register Account';
+      }
+    }
+
+    function showAuthModal(defaultTab = 'login') {
+      if (!modalAuth) return;
+      modalAuth.classList.remove('is-hidden');
+      modalAuth.setAttribute('aria-hidden', 'false');
+      switchAuthTab(defaultTab);
+    }
+
+    function hideAuthModal() {
+      if (!modalAuth) return;
+      modalAuth.classList.add('is-hidden');
+      modalAuth.setAttribute('aria-hidden', 'true');
+    }
+
+    function switchAuthTab(tab) {
+      if (tab === 'login') {
+        tabAuthLogin.classList.add('is-active');
+        tabAuthRegister.classList.remove('is-active');
+        formAuthLogin.classList.remove('is-hidden');
+        formAuthRegister.classList.add('is-hidden');
+      } else {
+        tabAuthRegister.classList.add('is-active');
+        tabAuthLogin.classList.remove('is-active');
+        formAuthRegister.classList.remove('is-hidden');
+        formAuthLogin.classList.add('is-hidden');
+      }
+    }
+
+    if (btnAuthHeader) {
+      btnAuthHeader.addEventListener('click', () => {
+        addMicroBounce(btnAuthHeader);
+        if (currentUser) {
+          if (confirm(`Do you want to sign out from ${currentUser.email}?`)) {
+            fetch('/api/auth/logout', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${authToken}` }
+            }).finally(() => {
+              authToken = '';
+              currentUser = null;
+              localStorage.removeItem('leadmap_auth_token');
+              updateAuthHeaderUI(null);
+              showToast('Signed out successfully.', 'info');
+            });
+          }
+        } else {
+          showAuthModal('login');
+        }
+      });
+    }
+
+    if (btnCloseAuthModal) btnCloseAuthModal.addEventListener('click', hideAuthModal);
+    if (tabAuthLogin) tabAuthLogin.addEventListener('click', () => switchAuthTab('login'));
+    if (tabAuthRegister) tabAuthRegister.addEventListener('click', () => switchAuthTab('register'));
+
+    // Submit Login
+    if (formAuthLogin) {
+      formAuthLogin.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = inputLoginEmail.value.trim();
+        const password = inputLoginPassword.value.trim();
+        if (!email || !password) return;
+
+        btnSubmitLogin.disabled = true;
+        btnSubmitLogin.textContent = 'Signing in...';
+        authLoginFeedback.classList.add('is-hidden');
+
+        try {
+          const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+          });
+          const data = await res.json();
+          btnSubmitLogin.disabled = false;
+          btnSubmitLogin.textContent = 'Sign In to Dashboard';
+
+          if (data.success && data.token) {
+            authToken = data.token;
+            currentUser = data.user;
+            localStorage.setItem('leadmap_auth_token', authToken);
+            updateAuthHeaderUI(currentUser);
+            hideAuthModal();
+            showToast(data.message || `Welcome back, ${currentUser.name}!`, 'success');
+          } else {
+            authLoginFeedback.className = 'status-alert status-alert-error';
+            authLoginFeedback.textContent = data.error || 'Failed to sign in.';
+            authLoginFeedback.classList.remove('is-hidden');
+          }
+        } catch (err) {
+          btnSubmitLogin.disabled = false;
+          btnSubmitLogin.textContent = 'Sign In to Dashboard';
+          authLoginFeedback.className = 'status-alert status-alert-error';
+          authLoginFeedback.textContent = err.message || 'Network error.';
+          authLoginFeedback.classList.remove('is-hidden');
+        }
+      });
+    }
+
+    // Submit Register
+    if (formAuthRegister) {
+      formAuthRegister.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = inputRegisterName.value.trim();
+        const email = inputRegisterEmail.value.trim();
+        const password = inputRegisterPassword.value.trim();
+        if (!email || !password) return;
+
+        btnSubmitRegister.disabled = true;
+        btnSubmitRegister.textContent = 'Creating account...';
+        authRegisterFeedback.classList.add('is-hidden');
+
+        try {
+          const res = await fetch('/api/auth/signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, email, password })
+          });
+          const data = await res.json();
+          btnSubmitRegister.disabled = false;
+          btnSubmitRegister.textContent = 'Create Free Account';
+
+          if (data.success && data.token) {
+            authToken = data.token;
+            currentUser = data.user;
+            localStorage.setItem('leadmap_auth_token', authToken);
+            updateAuthHeaderUI(currentUser);
+            hideAuthModal();
+            showToast(data.message || 'Account created successfully!', 'success');
+          } else {
+            authRegisterFeedback.className = 'status-alert status-alert-error';
+            authRegisterFeedback.textContent = data.error || 'Failed to register.';
+            authRegisterFeedback.classList.remove('is-hidden');
+          }
+        } catch (err) {
+          btnSubmitRegister.disabled = false;
+          btnSubmitRegister.textContent = 'Create Free Account';
+          authRegisterFeedback.className = 'status-alert status-alert-error';
+          authRegisterFeedback.textContent = err.message || 'Network error.';
+          authRegisterFeedback.classList.remove('is-hidden');
+        }
+      });
+    }
+
+    // Check existing session
+    checkAuthSession();
   }
 
   function escapeHtml(str) {
