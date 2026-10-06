@@ -2689,3 +2689,642 @@ button, input, select, textarea {
   color: #fbbf24;
 }
 
+/* ==========================================================================
+   15. DRAWERS, MODALS & FLOATING BAR — LAYOUT FIXES
+   Root cause fixed: .drawer-body had no styles (no scroll / padding), action
+   rows could not wrap, and the bulk bar was centered with an unbounded width.
+   ========================================================================== */
+
+/* Drawer shell: header fixed on top, body scrolls inside the viewport */
+.drawer {
+  height: 100vh;
+  height: 100dvh;
+  width: min(440px, 100vw);
+  max-width: 100vw;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+#dossier-drawer {
+  width: min(520px, 100vw);
+  max-width: 100vw;
+}
+
+.drawer-header {
+  flex-shrink: 0;
+  gap: 0.75rem;
+  padding-top: max(1.1rem, env(safe-area-inset-top, 0));
+}
+
+.drawer-header > .drawer-title-group {
+  min-width: 0;
+  flex: 1;
+}
+
+.drawer-title-group > div {
+  min-width: 0;
+}
+
+.drawer-title-group h3,
+.drawer-subtitle {
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+
+.drawer-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 0.1rem;
+}
+
+.drawer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem 2rem;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+/* The history drawer manages its own list padding / scrolling */
+#history-drawer .drawer-body {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.drawer-toolbar {
+  flex-shrink: 0;
+}
+
+/* Close (✕) button — was unstyled */
+.btn-close-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-chip);
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-close-icon:hover,
+.btn-close-icon:focus-visible {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #ef4444;
+  outline: none;
+}
+
+/* Dossier: action buttons wrap instead of being clipped */
+.dossier-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.dossier-quick-actions .btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.6rem 0.9rem;
+}
+
+.dossier-quick-actions .btn-whatsapp {
+  flex: 2 1 190px;
+}
+
+.dossier-card {
+  min-width: 0;
+}
+
+.dossier-detail-row {
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.detail-label {
+  flex-shrink: 0;
+  min-width: 80px;
+}
+
+.detail-val {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dossier-reputation-grid {
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+}
+
+.dossier-socials-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.outreach-textarea {
+  width: 100%;
+  max-width: 100%;
+  resize: vertical;
+}
+
+.outreach-actions {
+  flex-wrap: wrap;
+}
+
+/* Modal: always fits the viewport and scrolls internally */
+.modal-backdrop {
+  padding: max(1rem, env(safe-area-inset-top, 0)) 1rem max(1rem, env(safe-area-inset-bottom, 0));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.modal-card {
+  width: min(580px, 100%);
+  max-width: 100%;
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  margin: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.modal-header {
+  gap: 0.75rem;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-modal);
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+}
+
+.modal-title-group {
+  min-width: 0;
+}
+
+.modal-title-group > div {
+  min-width: 0;
+}
+
+.modal-title-group .card-title,
+.modal-title-group .card-desc {
+  overflow-wrap: anywhere;
+}
+
+.modal-body .form-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.modal-footer-actions {
+  flex-wrap: wrap;
+}
+
+.sql-hint-header {
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* Floating bulk-action bar: bounded to the viewport, wraps instead of clipping */
+.bulk-bar {
+  max-width: calc(100vw - 1.5rem);
+  border-radius: 20px;
+  padding: 0.6rem 0.9rem;
+  bottom: calc(1.25rem + env(safe-area-inset-bottom, 0));
+}
+
+.bulk-bar-content {
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem 1rem;
+}
+
+.bulk-actions {
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.bulk-actions .btn {
+  padding: 0.45rem 0.75rem;
+}
+
+/* Toasts never exceed the viewport */
+.toast-container {
+  max-width: calc(100vw - 2rem);
+  right: max(1rem, env(safe-area-inset-right, 0));
+  bottom: max(1rem, env(safe-area-inset-bottom, 0));
+}
+
+.toast {
+  max-width: min(380px, calc(100vw - 2rem));
+  overflow-wrap: anywhere;
+}
+
+/* ==========================================================================
+   16. UNIVERSAL RESPONSIVE LAYER — phones, tablets, laptops, desktops, TVs
+   ========================================================================== */
+
+/* Fluid media / long-text safety everywhere */
+img, svg, canvas, video {
+  max-width: 100%;
+}
+
+.card, .metric-card, .form-group, .toolbar-left, .toolbar-right {
+  min-width: 0;
+}
+
+.card-title, .company-title, .history-item h4 {
+  overflow-wrap: anywhere;
+}
+
+.table-container {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  max-height: min(70vh, 720px);
+}
+
+.data-table td {
+  overflow-wrap: anywhere;
+}
+
+/* ── Ultra-wide / large desktops & TVs (>= 1600px) ─────────────────────────── */
+@media (min-width: 1600px) {
+  html { font-size: 16px; }
+  .main-container,
+  .header-container {
+    max-width: 1680px;
+  }
+}
+
+/* ── Laptops / small desktops (<= 1200px) ──────────────────────────────────── */
+@media (max-width: 1200px) {
+  .data-table {
+    min-width: 780px;
+  }
+}
+
+/* ── Tablets (<= 900px): header wraps neatly ───────────────────────────────── */
+@media (max-width: 900px) {
+  .header-container {
+    flex-wrap: wrap;
+  }
+
+  .header-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+
+  .header-status-group {
+    flex-wrap: wrap;
+  }
+
+  .card {
+    padding: 1.25rem;
+  }
+
+  .dropdown-menu {
+    max-width: calc(100vw - 2rem);
+  }
+
+  .pipeline-motion-container {
+    overflow-x: auto;
+  }
+}
+
+/* ── Phones & small tablets (<= 700px): leads table becomes stacked cards ──── */
+@media (max-width: 700px) {
+  .leads-table-card {
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .table-container {
+    max-height: none;
+    overflow-x: hidden;
+    padding: 0.75rem;
+  }
+
+  .data-table,
+  .data-table tbody {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .data-table thead {
+    display: none;
+  }
+
+  .data-table tbody tr.lead-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "check company score"
+      "contact contact contact"
+      "web web web"
+      "rating rating rating"
+      "addr addr addr"
+      "act act act";
+    align-items: start;
+    gap: 0.15rem 0.75rem;
+    padding: 0.85rem 0.9rem;
+    margin-bottom: 0.75rem;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-top: 1px solid var(--border-card-specular);
+    border-radius: 14px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .data-table tbody tr.lead-row td {
+    display: block;
+    padding: 0.35rem 0;
+    border: none;
+    min-width: 0;
+  }
+
+  .data-table tbody tr.lead-row td:nth-child(1) { grid-area: check; padding-top: 0.2rem; }
+  .data-table tbody tr.lead-row td:nth-child(2) { grid-area: score; justify-self: end; }
+  .data-table tbody tr.lead-row td:nth-child(3) { grid-area: company; }
+  .data-table tbody tr.lead-row td:nth-child(4) { grid-area: contact; }
+  .data-table tbody tr.lead-row td:nth-child(5) { grid-area: web; }
+  .data-table tbody tr.lead-row td:nth-child(6) { grid-area: rating; }
+  .data-table tbody tr.lead-row td:nth-child(7) { grid-area: addr; }
+  .data-table tbody tr.lead-row td:nth-child(8) {
+    grid-area: act;
+    padding-top: 0.6rem;
+    margin-top: 0.3rem;
+    border-top: 1px dashed var(--border-subtle);
+  }
+
+  .data-table tbody tr.lead-row td:nth-child(4)::before,
+  .data-table tbody tr.lead-row td:nth-child(5)::before,
+  .data-table tbody tr.lead-row td:nth-child(6)::before,
+  .data-table tbody tr.lead-row td:nth-child(7)::before {
+    display: block;
+    margin-bottom: 0.15rem;
+    font-size: 0.66rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .data-table tbody tr.lead-row td:nth-child(4)::before { content: 'Direct contact'; }
+  .data-table tbody tr.lead-row td:nth-child(5)::before { content: 'Website'; }
+  .data-table tbody tr.lead-row td:nth-child(6)::before { content: 'Rating'; }
+  .data-table tbody tr.lead-row td:nth-child(7)::before { content: 'Location'; }
+
+  .data-table .address-cell {
+    max-width: none;
+    white-space: normal;
+  }
+
+  .data-table tbody tr.lead-row td:nth-child(8) > div {
+    flex-wrap: wrap !important;
+    gap: 0.5rem !important;
+  }
+
+  .data-table tbody tr.lead-row td:nth-child(8) .btn,
+  .data-table tbody tr.lead-row td:nth-child(8) .btn-whatsapp-mini {
+    min-height: 40px;
+    padding-left: 0.8rem;
+    padding-right: 0.8rem;
+  }
+
+  .data-table tbody tr.empty-state-row,
+  .data-table tbody tr.empty-state-row td {
+    display: block;
+    width: 100%;
+  }
+
+  .data-table tbody tr.lead-row.is-selected {
+    border-color: var(--accent-indigo);
+    box-shadow: 0 0 0 1px var(--accent-indigo), var(--shadow-sm);
+  }
+
+  .table-footer {
+    flex-direction: column;
+    gap: 0.5rem;
+    text-align: center;
+  }
+
+  .mobile-table-hint {
+    display: none;
+  }
+
+  .map-view-container {
+    height: 420px;
+  }
+}
+
+/* ── Phones (<= 640px): drawers full-screen, bulk bar = bottom sheet ───────── */
+@media (max-width: 640px) {
+  .drawer,
+  #dossier-drawer {
+    width: 100vw;
+    max-width: 100vw;
+    border-left: none;
+  }
+
+  .drawer-body {
+    padding: 1rem 1rem 1.75rem;
+  }
+
+  .drawer-header {
+    padding: max(0.9rem, env(safe-area-inset-top, 0)) 1rem 0.9rem;
+  }
+
+  .dossier-quick-actions .btn-whatsapp {
+    flex: 1 1 100%;
+  }
+
+  .dossier-quick-actions .btn-secondary {
+    flex: 1 1 calc(50% - 0.25rem);
+  }
+
+  .dossier-detail-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.2rem;
+  }
+
+  .detail-val {
+    text-align: left;
+  }
+
+  .dossier-reputation-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  /* Modal becomes a near-full-screen sheet */
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal-card {
+    width: 100%;
+    max-width: 100%;
+    max-height: 94dvh;
+    border-radius: 18px 18px 0 0;
+    margin: 0;
+  }
+
+  .modal-header {
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+  }
+
+  .modal-footer-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .modal-footer-actions .btn,
+  .modal-footer .btn {
+    width: 100%;
+  }
+
+  /* Bulk bar: full-width bottom sheet with wrapped, scrollable buttons */
+  .bulk-bar {
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: calc(0.5rem + env(safe-area-inset-bottom, 0));
+    transform: none !important;
+    max-width: none;
+    width: auto;
+    max-height: 42dvh;
+    overflow-y: auto;
+    border-radius: 18px;
+    padding: 0.7rem;
+  }
+
+  .bulk-bar-content {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
+  }
+
+  .bulk-info {
+    justify-content: center;
+  }
+
+  .bulk-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+  }
+
+  .bulk-actions .btn {
+    width: 100%;
+    min-height: 40px;
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  /* Toasts move to the top so they never hide the bulk sheet */
+  .toast-container {
+    top: max(0.75rem, env(safe-area-inset-top, 0));
+    bottom: auto;
+    left: 0.75rem;
+    right: 0.75rem;
+    max-width: none;
+  }
+
+  .toast {
+    max-width: 100%;
+  }
+}
+
+/* ── Very small phones (<= 380px) ──────────────────────────────────────────── */
+@media (max-width: 380px) {
+  .bulk-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .dossier-quick-actions .btn-secondary {
+    flex: 1 1 100%;
+  }
+
+  .dossier-reputation-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .data-table tbody tr.lead-row {
+    padding: 0.75rem;
+  }
+}
+
+/* ── Short landscape screens (phones turned sideways) ──────────────────────── */
+@media (max-height: 480px) and (orientation: landscape) {
+  .modal-card {
+    max-height: 100dvh;
+    border-radius: 12px;
+  }
+
+  .bulk-bar {
+    max-height: 60dvh;
+  }
+
+  .drawer-body {
+    padding-bottom: 1rem;
+  }
+}
+
+/* ── Touch devices: comfortable 40–44px tap targets ────────────────────────── */
+@media (pointer: coarse) {
+  .btn,
+  .tab-btn,
+  .view-toggle-btn,
+  .chip-preset,
+  .dropdown-item {
+    min-height: 40px;
+  }
+
+  .btn-icon,
+  .btn-close-icon {
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+  }
+
+  .lead-checkbox,
+  #check-all-leads {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+/* ── Respect reduced-motion preferences ────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .glass-orb,
+  .marquee-track {
+    animation: none !important;
+  }
+}
+
