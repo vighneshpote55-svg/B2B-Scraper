@@ -2181,34 +2181,60 @@ CREATE POLICY "Allow anon read and write on scrape_history" ON public.scrape_his
     }, 3500);
   }
 
-  // ── Authentication Integration (Login, Register & Session) ────────────────
+  // ── Authentication Integration (Full-Page Animated Auth Gate & Session) ────
   function setupAuthIntegration() {
+    const authGateOverlay = document.getElementById('auth-gate-overlay');
+    const gateTabLogin = document.getElementById('gate-tab-login');
+    const gateTabRegister = document.getElementById('gate-tab-register');
+    const gateFormLogin = document.getElementById('gate-form-login');
+    const gateFormRegister = document.getElementById('gate-form-register');
+
+    const gateLoginEmail = document.getElementById('gate-login-email');
+    const gateLoginPassword = document.getElementById('gate-login-password');
+    const gateLoginFeedback = document.getElementById('gate-login-feedback');
+    const btnGateSubmitLogin = document.getElementById('btn-gate-submit-login');
+
+    const gateRegisterName = document.getElementById('gate-register-name');
+    const gateRegisterEmail = document.getElementById('gate-register-email');
+    const gateRegisterPassword = document.getElementById('gate-register-password');
+    const gateRegisterFeedback = document.getElementById('gate-register-feedback');
+    const btnGateSubmitRegister = document.getElementById('btn-gate-submit-register');
+
     const btnAuthHeader = document.getElementById('btn-auth-header');
     const authHeaderLabel = document.getElementById('auth-header-label');
     const modalAuth = document.getElementById('modal-auth');
     const btnCloseAuthModal = document.getElementById('btn-close-auth-modal');
-    
-    const tabAuthLogin = document.getElementById('tab-auth-login');
-    const tabAuthRegister = document.getElementById('tab-auth-register');
-    const formAuthLogin = document.getElementById('form-auth-login');
-    const formAuthRegister = document.getElementById('form-auth-register');
-
-    const inputLoginEmail = document.getElementById('input-login-email');
-    const inputLoginPassword = document.getElementById('input-login-password');
-    const authLoginFeedback = document.getElementById('auth-login-feedback');
-    const btnSubmitLogin = document.getElementById('btn-submit-login');
-
-    const inputRegisterName = document.getElementById('input-register-name');
-    const inputRegisterEmail = document.getElementById('input-register-email');
-    const inputRegisterPassword = document.getElementById('input-register-password');
-    const authRegisterFeedback = document.getElementById('auth-register-feedback');
-    const btnSubmitRegister = document.getElementById('btn-submit-register');
 
     let currentUser = null;
     let authToken = localStorage.getItem('leadmap_auth_token') || '';
 
+    // Animate Auth Gate Entrance
+    function animateGateEntrance() {
+      const gateCard = document.querySelector('.auth-gate-card');
+      const gateBrandIcon = document.querySelector('.gate-brand-icon');
+      if (gateCard) {
+        runAnimation(gateCard, {
+          opacity: [0, 1],
+          translateY: [35, 0],
+          scale: [0.92, 1],
+          duration: 650,
+          ease: 'outBack(1.4)'
+        });
+      }
+      if (gateBrandIcon) {
+        runAnimation(gateBrandIcon, {
+          scale: [0.6, 1],
+          rotate: [-15, 0],
+          duration: 500,
+          delay: 150,
+          ease: 'outBack(1.8)'
+        });
+      }
+    }
+
     async function checkAuthSession() {
       if (!authToken) {
+        showAuthGate();
         updateAuthHeaderUI(null);
         return;
       }
@@ -2217,15 +2243,38 @@ CREATE POLICY "Allow anon read and write on scrape_history" ON public.scrape_his
         const data = await res.json();
         if (data.authenticated && data.user) {
           currentUser = data.user;
+          hideAuthGate();
           updateAuthHeaderUI(currentUser);
         } else {
           authToken = '';
           localStorage.removeItem('leadmap_auth_token');
+          showAuthGate();
           updateAuthHeaderUI(null);
         }
       } catch (err) {
         console.warn('Auth session check error:', err);
+        showAuthGate();
       }
+    }
+
+    function showAuthGate() {
+      if (!authGateOverlay) return;
+      authGateOverlay.classList.remove('is-hidden');
+      animateGateEntrance();
+    }
+
+    function hideAuthGate() {
+      if (!authGateOverlay) return;
+      runAnimation('.auth-gate-card', {
+        scale: [1, 1.05],
+        opacity: [1, 0],
+        translateY: [0, -25],
+        duration: 380,
+        ease: 'inCubic',
+        onComplete: () => {
+          authGateOverlay.classList.add('is-hidden');
+        }
+      });
     }
 
     function updateAuthHeaderUI(user) {
@@ -2241,70 +2290,36 @@ CREATE POLICY "Allow anon read and write on scrape_history" ON public.scrape_his
       }
     }
 
-    function showAuthModal(defaultTab = 'login') {
-      if (!modalAuth) return;
-      modalAuth.classList.remove('is-hidden');
-      modalAuth.setAttribute('aria-hidden', 'false');
-      switchAuthTab(defaultTab);
-    }
-
-    function hideAuthModal() {
-      if (!modalAuth) return;
-      modalAuth.classList.add('is-hidden');
-      modalAuth.setAttribute('aria-hidden', 'true');
-    }
-
-    function switchAuthTab(tab) {
+    function switchGateTab(tab) {
       if (tab === 'login') {
-        tabAuthLogin.classList.add('is-active');
-        tabAuthRegister.classList.remove('is-active');
-        formAuthLogin.classList.remove('is-hidden');
-        formAuthRegister.classList.add('is-hidden');
+        gateTabLogin.classList.add('is-active');
+        gateTabRegister.classList.remove('is-active');
+        gateFormLogin.classList.remove('is-hidden');
+        gateFormRegister.classList.add('is-hidden');
+        runAnimation(gateFormLogin, { opacity: [0, 1], translateY: [10, 0], duration: 300, ease: 'outCubic' });
       } else {
-        tabAuthRegister.classList.add('is-active');
-        tabAuthLogin.classList.remove('is-active');
-        formAuthRegister.classList.remove('is-hidden');
-        formAuthLogin.classList.add('is-hidden');
+        gateTabRegister.classList.add('is-active');
+        gateTabLogin.classList.remove('is-active');
+        gateFormRegister.classList.remove('is-hidden');
+        gateFormLogin.classList.add('is-hidden');
+        runAnimation(gateFormRegister, { opacity: [0, 1], translateY: [10, 0], duration: 300, ease: 'outCubic' });
       }
     }
 
-    if (btnAuthHeader) {
-      btnAuthHeader.addEventListener('click', () => {
-        addMicroBounce(btnAuthHeader);
-        if (currentUser) {
-          if (confirm(`Do you want to sign out from ${currentUser.email}?`)) {
-            fetch('/api/auth/logout', {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${authToken}` }
-            }).finally(() => {
-              authToken = '';
-              currentUser = null;
-              localStorage.removeItem('leadmap_auth_token');
-              updateAuthHeaderUI(null);
-              showToast('Signed out successfully.', 'info');
-            });
-          }
-        } else {
-          showAuthModal('login');
-        }
-      });
-    }
+    if (gateTabLogin) gateTabLogin.addEventListener('click', () => switchGateTab('login'));
+    if (gateTabRegister) gateTabRegister.addEventListener('click', () => switchGateTab('register'));
 
-    if (btnCloseAuthModal) btnCloseAuthModal.addEventListener('click', hideAuthModal);
-    if (tabAuthLogin) tabAuthLogin.addEventListener('click', () => switchAuthTab('login'));
-    if (tabAuthRegister) tabAuthRegister.addEventListener('click', () => switchAuthTab('register'));
-
-    // Submit Login
-    if (formAuthLogin) {
-      formAuthLogin.addEventListener('submit', async (e) => {
+    // Submit Auth Gate Login
+    if (gateFormLogin) {
+      gateFormLogin.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const email = inputLoginEmail.value.trim();
-        const password = inputLoginPassword.value.trim();
+        const email = gateLoginEmail.value.trim();
+        const password = gateLoginPassword.value.trim();
         if (!email || !password) return;
 
-        btnSubmitLogin.disabled = true;
-        btnSubmitLogin.textContent = 'Signing in...';
-        authLoginFeedback.classList.add('is-hidden');
+        btnGateSubmitLogin.disabled = true;
+        btnGateSubmitLogin.querySelector('span').textContent = 'Signing in...';
+        gateLoginFeedback.classList.add('is-hidden');
 
         try {
           const res = await fetch('/api/auth/login', {
@@ -2313,43 +2328,44 @@ CREATE POLICY "Allow anon read and write on scrape_history" ON public.scrape_his
             body: JSON.stringify({ email, password })
           });
           const data = await res.json();
-          btnSubmitLogin.disabled = false;
-          btnSubmitLogin.textContent = 'Sign In to Dashboard';
+          btnGateSubmitLogin.disabled = false;
+          btnGateSubmitLogin.querySelector('span').textContent = 'Sign In & Launch Dashboard';
 
           if (data.success && data.token) {
             authToken = data.token;
             currentUser = data.user;
             localStorage.setItem('leadmap_auth_token', authToken);
             updateAuthHeaderUI(currentUser);
-            hideAuthModal();
+            hideAuthGate();
             showToast(data.message || `Welcome back, ${currentUser.name}!`, 'success');
           } else {
-            authLoginFeedback.className = 'status-alert status-alert-error';
-            authLoginFeedback.textContent = data.error || 'Failed to sign in.';
-            authLoginFeedback.classList.remove('is-hidden');
+            gateLoginFeedback.className = 'status-alert status-alert-error';
+            gateLoginFeedback.textContent = data.error || 'Failed to sign in.';
+            gateLoginFeedback.classList.remove('is-hidden');
+            addMicroBounce(gateLoginFeedback);
           }
         } catch (err) {
-          btnSubmitLogin.disabled = false;
-          btnSubmitLogin.textContent = 'Sign In to Dashboard';
-          authLoginFeedback.className = 'status-alert status-alert-error';
-          authLoginFeedback.textContent = err.message || 'Network error.';
-          authLoginFeedback.classList.remove('is-hidden');
+          btnGateSubmitLogin.disabled = false;
+          btnGateSubmitLogin.querySelector('span').textContent = 'Sign In & Launch Dashboard';
+          gateLoginFeedback.className = 'status-alert status-alert-error';
+          gateLoginFeedback.textContent = err.message || 'Network error.';
+          gateLoginFeedback.classList.remove('is-hidden');
         }
       });
     }
 
-    // Submit Register
-    if (formAuthRegister) {
-      formAuthRegister.addEventListener('submit', async (e) => {
+    // Submit Auth Gate Register
+    if (gateFormRegister) {
+      gateFormRegister.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const name = inputRegisterName.value.trim();
-        const email = inputRegisterEmail.value.trim();
-        const password = inputRegisterPassword.value.trim();
+        const name = gateRegisterName.value.trim();
+        const email = gateRegisterEmail.value.trim();
+        const password = gateRegisterPassword.value.trim();
         if (!email || !password) return;
 
-        btnSubmitRegister.disabled = true;
-        btnSubmitRegister.textContent = 'Creating account...';
-        authRegisterFeedback.classList.add('is-hidden');
+        btnGateSubmitRegister.disabled = true;
+        btnGateSubmitRegister.querySelector('span').textContent = 'Creating account...';
+        gateRegisterFeedback.classList.add('is-hidden');
 
         try {
           const res = await fetch('/api/auth/signup', {
@@ -2358,32 +2374,62 @@ CREATE POLICY "Allow anon read and write on scrape_history" ON public.scrape_his
             body: JSON.stringify({ name, email, password })
           });
           const data = await res.json();
-          btnSubmitRegister.disabled = false;
-          btnSubmitRegister.textContent = 'Create Free Account';
+          btnGateSubmitRegister.disabled = false;
+          btnGateSubmitRegister.querySelector('span').textContent = 'Create Account & Access App';
 
           if (data.success && data.token) {
             authToken = data.token;
             currentUser = data.user;
             localStorage.setItem('leadmap_auth_token', authToken);
             updateAuthHeaderUI(currentUser);
-            hideAuthModal();
+            hideAuthGate();
             showToast(data.message || 'Account created successfully!', 'success');
           } else {
-            authRegisterFeedback.className = 'status-alert status-alert-error';
-            authRegisterFeedback.textContent = data.error || 'Failed to register.';
-            authRegisterFeedback.classList.remove('is-hidden');
+            gateRegisterFeedback.className = 'status-alert status-alert-error';
+            gateRegisterFeedback.textContent = data.error || 'Failed to register.';
+            gateRegisterFeedback.classList.remove('is-hidden');
+            addMicroBounce(gateRegisterFeedback);
           }
         } catch (err) {
-          btnSubmitRegister.disabled = false;
-          btnSubmitRegister.textContent = 'Create Free Account';
-          authRegisterFeedback.className = 'status-alert status-alert-error';
-          authRegisterFeedback.textContent = err.message || 'Network error.';
-          authRegisterFeedback.classList.remove('is-hidden');
+          btnGateSubmitRegister.disabled = false;
+          btnGateSubmitRegister.querySelector('span').textContent = 'Create Account & Access App';
+          gateRegisterFeedback.className = 'status-alert status-alert-error';
+          gateRegisterFeedback.textContent = err.message || 'Network error.';
+          gateRegisterFeedback.classList.remove('is-hidden');
         }
       });
     }
 
-    // Check existing session
+    if (btnAuthHeader) {
+      btnAuthHeader.addEventListener('click', () => {
+        addMicroBounce(btnAuthHeader);
+        if (currentUser) {
+          if (confirm(`Sign out from ${currentUser.email}?`)) {
+            fetch('/api/auth/logout', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${authToken}` }
+            }).finally(() => {
+              authToken = '';
+              currentUser = null;
+              localStorage.removeItem('leadmap_auth_token');
+              updateAuthHeaderUI(null);
+              showAuthGate();
+              showToast('Signed out successfully.', 'info');
+            });
+          }
+        } else {
+          showAuthGate();
+        }
+      });
+    }
+
+    if (btnCloseAuthModal && modalAuth) {
+      btnCloseAuthModal.addEventListener('click', () => {
+        modalAuth.classList.add('is-hidden');
+      });
+    }
+
+    // Check auth state on launch
     checkAuthSession();
   }
 
