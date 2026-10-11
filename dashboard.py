@@ -60,6 +60,14 @@ def _verify_password(password, stored_password_hash):
     except Exception:
         return False
 
+def _safe_ts(val):
+    if val is None:
+        return 0.0
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return 0.0
+
 def _load_users():
     with USER_LOCK:
         users = {}
@@ -76,7 +84,7 @@ def _load_users():
                 if sb_users:
                     # Merge Supabase users with local cache
                     for em, u in sb_users.items():
-                        if em not in users or u.get("created_at", 0) > users[em].get("created_at", 0):
+                        if em not in users or _safe_ts(u.get("created_at")) > _safe_ts(users[em].get("created_at")):
                             users[em] = u
             except Exception as e:
                 print(f"[Supabase load users error] {e}")
@@ -361,8 +369,8 @@ def background_job_processor(job_id, params):
                     "depth": params.get("depth", 5),
                     "status": "ok",
                     "stage": "Completed",
-                    "started_at": job_meta.get("started_at"),
-                    "completed_at": time.time(),
+                    "started_at": int(start_time),
+                    "completed_at": int(time.time()),
                     "leads": cleaned_leads,
                     "metrics": {
                         "total": len(cleaned_leads),
@@ -550,7 +558,7 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 print(f"[history error] {e}")
 
-            jobs.sort(key=lambda x: (x.get("started_at") or 0), reverse=True)
+            jobs.sort(key=lambda x: _safe_ts(x.get("started_at")), reverse=True)
 
             # Enrich and merge with Supabase Cloud history
             if is_supabase_configured():
@@ -567,7 +575,7 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                 except Exception as sbe:
                     print(f"[Supabase history check error] {sbe}")
 
-            jobs.sort(key=lambda x: (x.get("started_at") or 0), reverse=True)
+            jobs.sort(key=lambda x: _safe_ts(x.get("started_at")), reverse=True)
             self._send_json({"jobs": jobs, "supabase_connected": is_supabase_configured()})
             return
 
@@ -671,6 +679,9 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                     with open(saved_file) as f:
                         d = json.load(f)
                         leads = d.get("leads", [])
+
+            if not leads and is_supabase_configured():
+                leads = fetch_leads_for_job_from_supabase(job_id)
 
             if not leads:
                 self._send_json({"error": "No leads found for this job ID"}, 404)

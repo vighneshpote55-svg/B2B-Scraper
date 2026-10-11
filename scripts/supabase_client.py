@@ -240,7 +240,7 @@ def save_scrape_job_to_supabase(job_info: dict, supabase_url=None, supabase_key=
     params = job_info.get("params") or {}
     keyword = job_info.get("keyword") or params.get("keyword") or ""
     city = job_info.get("city") or params.get("city") or ""
-    depth = int(params.get("depth") or 5)
+    depth = int(job_info.get("depth") or params.get("depth") or 5)
     status = job_info.get("status") or "ok"
     stage = job_info.get("stage") or "Completed"
     started_at = int(job_info.get("started_at") or time.time())
@@ -267,7 +267,7 @@ def save_scrape_job_to_supabase(job_info: dict, supabase_url=None, supabase_key=
         "params": params
     }
 
-    endpoint = f"{url}/rest/v1/{history_table}"
+    endpoint = f"{url}/rest/v1/{history_table}?on_conflict=id"
     headers = {
         "apikey": key,
         "Authorization": f"Bearer {key}",
@@ -493,7 +493,7 @@ def save_user_to_supabase(user_obj: dict, supabase_url=None, supabase_key=None):
     if not (url and key):
         return {"success": False, "error": "Supabase credentials not configured."}
 
-    endpoint = f"{url}/rest/v1/users"
+    endpoint = f"{url}/rest/v1/users?on_conflict=email"
     headers = {
         "apikey": key,
         "Authorization": f"Bearer {key}",

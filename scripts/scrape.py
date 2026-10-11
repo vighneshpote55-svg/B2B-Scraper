@@ -329,7 +329,8 @@ def main():
                 "depth": a.depth,
                 "status": "ok",
                 "stage": "Completed",
-                "completed_at": time.time(),
+                "started_at": int(time.time()),
+                "completed_at": int(time.time()),
                 "leads": results,
                 "metrics": {
                     "total": len(results),
@@ -337,7 +338,7 @@ def main():
                     "warm": sum(1 for l in results if l.get("lead_tier") == "WARM"),
                     "cold": sum(1 for l in results if l.get("lead_tier") == "COLD"),
                     "with_email": sum(1 for l in results if l.get("emails")),
-                    "with_phone": sum(1 for l in results if l.get("clean_phone"))
+                    "with_phone": sum(1 for l in results if (l.get("clean_phone") or l.get("phone")))
                 }
             })
     except Exception as e:
