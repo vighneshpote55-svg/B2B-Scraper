@@ -700,6 +700,113 @@ def fetch_all_users_from_supabase(supabase_url=None, supabase_key=None):
     return {}
 
 
+# ── scrape_jobs Table Integration (Phase 2 & 3: Telegram Bot) ────────────────
+
+def create_scrape_job_record(job_info: dict, supabase_url=None, supabase_key=None) -> dict:
+    """Create a new job tracking record in public.scrape_jobs via PostgREST."""
+    url = (supabase_url or os.environ.get("SUPABASE_URL", "")).strip().rstrip("/")
+    key = (supabase_key or os.environ.get("SUPABASE_KEY", "")).strip()
+
+    if not (url and key):
+        return {"success": False, "error": "Supabase not configured"}
+
+    job_id = job_info.get("id") or str(uuid.uuid4())
+    endpoint = f"{url}/rest/v1/scrape_jobs"
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+        "User-Agent": "LeadMap-Pro-Supabase/1.0"
+    }
+
+    record = {
+        "id": job_id,
+        "scraper_job_id": job_info.get("scraper_job_id") or job_info.get("id") or "",
+        "telegram_user_id": str(job_info.get("telegram_user_id") or ""),
+        "telegram_chat_id": str(job_info.get("telegram_chat_id") or ""),
+        "telegram_update_id": str(job_info.get("telegram_update_id") or "") if job_info.get("telegram_update_id") else None,
+        "query": job_info.get("query") or job_info.get("keyword") or "Search",
+        "location": job_info.get("location") or job_info.get("city") or "",
+        "requested_limit": int(job_info.get("requested_limit") or job_info.get("depth") or 5),
+        "status": job_info.get("status") or "pending",
+        "stage": job_info.get("stage") or "Queued",
+        "progress": int(job_info.get("progress") or 0),
+        "lead_counts": job_info.get("lead_counts") or {},
+        "total_leads": int(job_info.get("total_leads") or 0),
+        "error_summary": job_info.get("error_summary") or None,
+        "source": job_info.get("source") or "telegram",
+        "metadata": job_info.get("metadata") or {}
+    }
+
+    try:
+        req = urllib.request.Request(endpoint, data=json.dumps(record).encode("utf-8"), headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status in (200, 201):
+                raw = json.loads(resp.read().decode("utf-8"))
+                res_obj = raw[0] if isinstance(raw, list) and raw else record
+                return {"success": True, "job": res_obj}
+            return {"success": False, "error": f"Unexpected status {resp.status}"}
+    except urllib.error.HTTPError as e:
+        err_msg = e.read().decode("utf-8", "replace")
+        return {"success": False, "error": f"HTTP {e.code}: {err_msg}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def update_scrape_job_record(job_id: str, updates: dict, supabase_url=None, supabase_key=None) -> dict:
+    """Update fields on an existing record in public.scrape_jobs via PostgREST PATCH."""
+    url = (supabase_url or os.environ.get("SUPABASE_URL", "")).strip().rstrip("/")
+    key = (supabase_key or os.environ.get("SUPABASE_KEY", "")).strip()
+
+    if not (url and key and job_id):
+        return {"success": False, "error": "Supabase not configured or missing job_id"}
+
+    endpoint = f"{url}/rest/v1/scrape_jobs?id=eq.{urllib.parse.quote(job_id)}"
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+        "User-Agent": "LeadMap-Pro-Supabase/1.0"
+    }
+
+    try:
+        req = urllib.request.Request(endpoint, data=json.dumps(updates).encode("utf-8"), headers=headers, method="PATCH")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status in (200, 204):
+                return {"success": True}
+            return {"success": False, "error": f"Unexpected status {resp.status}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def fetch_recent_scrape_jobs_from_supabase(limit: int = 5, supabase_url=None, supabase_key=None) -> list:
+    """Fetch the most recent scrape jobs from public.scrape_jobs via PostgREST."""
+    url = (supabase_url or os.environ.get("SUPABASE_URL", "")).strip().rstrip("/")
+    key = (supabase_key or os.environ.get("SUPABASE_KEY", "")).strip()
+
+    if not (url and key):
+        return []
+
+    endpoint = f"{url}/rest/v1/scrape_jobs?select=*&order=created_at.desc&limit={limit}"
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "User-Agent": "LeadMap-Pro-Supabase/1.0"
+    }
+
+    try:
+        req = urllib.request.Request(endpoint, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status in (200, 206):
+                return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        print(f"[Supabase fetch recent jobs error] {e}", file=sys.stderr)
+    return []
+
+
 if __name__ == "__main__":
     url, key, tbl = get_config()
     print("Testing Supabase connection...")
