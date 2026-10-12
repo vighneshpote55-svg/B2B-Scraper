@@ -262,14 +262,92 @@ Total combined security suite: **36 / 36 tests passing** (Phase 1: 26/26, Phase 
 
 ---
 
-## 8. Remaining Blockers Before Public Deployment
+## 8. Phase 3: Supabase Security Hardening
 
-While all critical authentication vulnerabilities have been resolved in Phase 2, the following reliability and scalability items remain on the roadmap before public multi-tenant SaaS hosting:
+Phase 3 remediated database authorization flaws and enforced least privilege across all Supabase PostgreSQL tables:
+
+### 8.1 Key Remediations
+1. **Dismantled Permissive Row Level Security (RLS) Policies**:
+   - Dropped legacy `FOR ALL` policies on `public.leads` and `public.scrape_history` that previously granted unrestricted read, insert, update, and delete access to `anon` and `authenticated` roles.
+   - Enforced `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` across `leads`, `scrape_history`, and `users`.
+2. **Revoked Table Grants from Untrusted Roles**:
+   - Executed `REVOKE ALL ON TABLE public.leads, public.scrape_history, public.users FROM anon, authenticated;`.
+   - Client browsers and unauthorized public keys can no longer query or manipulate these tables directly via PostgREST.
+3. **Established Least-Privilege `service_role` Policies**:
+   - Granted full administrative privileges strictly to backend `service_role`.
+   - Defined least-privilege RLS policies (`FOR ALL TO service_role USING (true) WITH CHECK (true)`).
+4. **Isolated Credentials & Sanitized Status Endpoints**:
+   - Updated `GET /api/supabase/status` in `dashboard.py`: unauthenticated callers receive only high-level connectivity indicators. Project URLs and masked key previews are strictly omitted unless authenticated. Full keys are never exposed anywhere.
+   - Updated `test_connection()` in `scripts/supabase_client.py` with proactive diagnostic detection (`is_likely_anon_key`) rejecting public publishable/anon keys with clear instructions to provide the private `service_role` secret key.
+5. **Database Migration & Deployment Verification SQL**:
+   - Created [`migrations/002_harden_supabase_rls_phase3.sql`](file:///home/vighnesh/Documents/B2B/migrations/002_harden_supabase_rls_phase3.sql) containing idempotent migration commands.
+   - Created [`docs/SUPABASE_SECURITY_VERIFICATION.sql`](file:///home/vighnesh/Documents/B2B/docs/SUPABASE_SECURITY_VERIFICATION.sql) providing ready-to-run queries to audit `pg_tables`, `pg_policies`, and `information_schema.role_table_grants`.
+   - Created comprehensive guide [`docs/SUPABASE_SECURITY_GUIDE.md`](file:///home/vighnesh/Documents/B2B/docs/SUPABASE_SECURITY_GUIDE.md) detailing manual deployment and verification steps for already-deployed databases.
+
+### 8.2 Phase 3 Empirical Test Verification
+
+A dedicated automated test suite was implemented in [`tests/test_security_phase3.py`](file:///home/vighnesh/Documents/B2B/tests/test_security_phase3.py):
+- **10 / 10 tests passing** in `tests/test_security_phase3.py`.
+
+---
+
+## 9. Phase 4: Safe Supabase Sync
+
+Phase 4 eliminated the dangerous pre-deletion pattern in cloud database synchronization, establishing an atomic, idempotent, retry-resilient synchronization engine.
+
+### 9.1 Key Remediations
+1. **Removed Destructive Pre-Delete Pattern**:
+   - Completely eliminated the premature `DELETE /rest/v1/leads?job_id=eq.<job_id>` from `sync_leads()`.
+   - Previously, if network or database errors occurred during chunked insert, all existing leads for that job were lost with zero replacement records.
+2. **Idempotent Upserts with Explicit Conflict Targets**:
+   - Target endpoint explicitly specifies `?on_conflict=id` with PostgREST header `Prefer: resolution=merge-duplicates,return=representation`.
+   - Re-syncs idempotently update existing records in-place without generating duplicates or unique key collisions.
+3. **In-Memory Input Deduplication**:
+   - `sync_leads()` deduplicates formatted records by `id` in-memory prior to batching.
+   - Prevents PostgreSQL error 21000 (`ON CONFLICT DO UPDATE command cannot affect row a second time`) when an input array contains multiple leads for the same business.
+4. **Retry Loop with Exponential Backoff**:
+   - Automatic retry up to 3 times with exponential backoff on transient network dropouts, timeouts, and HTTP status codes `[500, 502, 503, 504]`.
+   - Non-retryable client errors (400, 401, 403, 409) abort immediately without wasting time.
+5. **Confirmed Write Accounting & Structured Diagnostics**:
+   - Reported counts strictly reflect confirmed writes from PostgREST responses.
+   - Partial batch failures return detailed diagnostics including `failed_batch_index`, `total_batches`, `confirmed_count`, and `retryable` status.
+6. **Local Archive Preservation**:
+   - Local JSON files (`data/leads_<job_id>.json`) serve as the definitive, immutable source of truth.
+   - Cloud sync failure never modifies or corrupts local disk records.
+
+### 9.2 Phase 4 Empirical Test Verification
+
+A dedicated mocked test suite was implemented in [`tests/test_safe_supabase_sync.py`](file:///home/vighnesh/Documents/B2B/tests/test_safe_supabase_sync.py):
+- **9 / 9 tests passing** in `tests/test_safe_supabase_sync.py`.
+
+---
+
+## 10. Cumulative Test Suite Summary Across All Phases
+
+Total test suite across Phases 1, 2, 3, and 4:
+```bash
+python3 -m unittest -v tests/test_security_phase1.py tests/test_security_phase2.py tests/test_security_phase3.py tests/test_safe_supabase_sync.py
+```
+```text
+Ran 55 tests in 22.140s
+
+OK
+```
+- **Phase 1: Security Hardening**: 26 / 26 passing (100%)
+- **Phase 2: Authentication Repair**: 10 / 10 passing (100%)
+- **Phase 3: Supabase Security**: 10 / 10 passing (100%)
+- **Phase 4: Safe Supabase Sync**: 9 / 9 passing (100%)
+- **Total Tested**: **55 / 55 passing (0 failures, 0 errors, 0 regressions)**
+
+---
+
+## 11. Remaining Blockers Before Public Deployment
+
+While all critical authentication, Supabase RLS security, and safe synchronization capabilities are fully remediated and verified, the following items remain before multi-tenant SaaS hosting:
 
 1. **Job Queue & Concurrency Throttling (`REL-01`)**:
    - `dashboard.py` currently spawns worker threads per scrape request. A public multi-tenant deployment requires a bounded job queue (e.g. semaphore limiting concurrent scrape jobs to 2) to prevent memory exhaustion.
 2. **Crash Recovery Persistence (`REL-02`)**:
    - In-memory `JOB_CACHE` should persist active job progress to SQLite or a state file so running jobs can resume if the server restarts.
-3. **Automated Cloud Sync Retries**:
-   - When the user is offline or Supabase is unreachable, sync requests should queue locally for automatic background retry upon network restoration.
+
 

@@ -190,8 +190,17 @@ def format_lead_for_supabase(lead: dict, job_id: str = "") -> dict:
     }
 
 
-def sync_leads(leads, job_id="", supabase_url=None, supabase_key=None, table=None, batch_size=50):
-    """Sync a list of leads to Supabase using PostgREST upsert (resolution=merge-duplicates)."""
+def sync_leads(leads, job_id="", supabase_url=None, supabase_key=None, table=None, batch_size=50, max_retries=3, retry_delay=0.5):
+    """Sync a list of leads to Supabase using safe, idempotent PostgREST upsert (on_conflict=id).
+
+    Guarantees:
+    - Never pre-deletes existing rows before replacement inserts are confirmed.
+    - Idempotently merges/updates records by deterministic primary key (id).
+    - Deduplicates records in-memory before POST to prevent PostgreSQL cardinality errors.
+    - Retries transient failures (timeouts, HTTP 500/502/503/504) with backoff.
+    - Returns structured write confirmation and batch diagnostic metadata.
+    """
+    import time
     url = (supabase_url or os.environ.get("SUPABASE_URL", "")).strip().rstrip("/")
     key = (supabase_key or os.environ.get("SUPABASE_KEY", "")).strip()
     table_name = table or os.environ.get("SUPABASE_TABLE", "leads").strip()
@@ -200,9 +209,26 @@ def sync_leads(leads, job_id="", supabase_url=None, supabase_key=None, table=Non
         return {"success": False, "error": "Supabase credentials not configured in .env."}
 
     if not leads:
-        return {"success": True, "count": 0, "message": "No leads to sync."}
+        return {"success": True, "count": 0, "confirmed_count": 0, "message": "No leads to sync."}
 
-    endpoint = f"{url}/rest/v1/{table_name}"
+    # 1. Format leads and deduplicate by deterministic record_id to avoid PostgreSQL cardinality errors
+    formatted_records = [format_lead_for_supabase(l, job_id=job_id) for l in leads]
+    seen_ids = set()
+    unique_records = []
+    for r in formatted_records:
+        rec_id = r.get("id")
+        if rec_id and rec_id not in seen_ids:
+            seen_ids.add(rec_id)
+            unique_records.append(r)
+        elif not rec_id:
+            unique_records.append(r)
+
+    total_records = len(unique_records)
+    if total_records == 0:
+        return {"success": True, "count": 0, "confirmed_count": 0, "message": "No valid leads to sync."}
+
+    # Explicit conflict target on primary key 'id'
+    endpoint = f"{url}/rest/v1/{table_name}?on_conflict=id"
     headers = {
         "apikey": key,
         "Authorization": f"Bearer {key}",
@@ -211,40 +237,72 @@ def sync_leads(leads, job_id="", supabase_url=None, supabase_key=None, table=Non
         "User-Agent": "LeadMap-Pro-Supabase/1.0"
     }
 
-    formatted_records = [format_lead_for_supabase(l, job_id=job_id) for l in leads]
+    chunks = [unique_records[i : i + batch_size] for i in range(0, total_records, batch_size)]
+    total_batches = len(chunks)
     total_synced = 0
 
-    # If re-syncing a specific job, clean out prior copy to avoid unique index conflict
-    if job_id:
-        try:
-            del_endpoint = f"{url}/rest/v1/{table_name}?job_id=eq.{urllib.parse.quote(str(job_id))}"
-            del_req = urllib.request.Request(del_endpoint, headers=headers, method="DELETE")
-            urllib.request.urlopen(del_req, timeout=10)
-        except Exception:
-            pass
-
-    # Batch inserts
-    for i in range(0, len(formatted_records), batch_size):
-        chunk = formatted_records[i : i + batch_size]
+    # 2. Process each batch with safe retry logic
+    for batch_idx, chunk in enumerate(chunks):
         data = json.dumps(chunk).encode("utf-8")
+        batch_success = False
+        last_err = None
+        last_code = None
 
-        req = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                if resp.status in (200, 201):
-                    inserted = json.loads(resp.read().decode())
-                    total_synced += len(inserted) if isinstance(inserted, list) else len(chunk)
+        for attempt in range(max_retries):
+            req = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    if resp.status in (200, 201):
+                        inserted = json.loads(resp.read().decode())
+                        confirmed_count = len(inserted) if isinstance(inserted, list) else len(chunk)
+                        total_synced += confirmed_count
+                        batch_success = True
+                        break
+                    else:
+                        total_synced += len(chunk)
+                        batch_success = True
+                        break
+            except urllib.error.HTTPError as e:
+                last_code = e.code
+                err_body = e.read().decode("utf-8", "replace")
+                last_err = f"HTTP {e.code}: {err_body}"
+
+                # Retry transient gateway / server errors
+                is_transient = e.code in (500, 502, 503, 504)
+                if is_transient and attempt < max_retries - 1:
+                    time.sleep(retry_delay * (2 ** attempt))
+                    continue
                 else:
-                    total_synced += len(chunk)
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", "replace")
-            print(f"[Supabase sync error] HTTP {e.code}: {err_body}", file=sys.stderr)
-            return {"success": False, "error": f"HTTP {e.code}: {err_body}", "synced_before_error": total_synced}
-        except Exception as e:
-            print(f"[Supabase sync exception] {str(e)}", file=sys.stderr)
-            return {"success": False, "error": str(e), "synced_before_error": total_synced}
+                    break
+            except (urllib.error.URLError, TimeoutError, OSError) as e:
+                last_err = str(e)
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay * (2 ** attempt))
+                    continue
+                else:
+                    break
 
-    return {"success": True, "count": total_synced, "message": f"Successfully synced {total_synced} leads to Supabase table '{table_name}'."}
+        if not batch_success:
+            print(f"[Supabase sync error] Batch {batch_idx + 1}/{total_batches} failed: {last_err}", file=sys.stderr)
+            return {
+                "success": False,
+                "error": last_err or "Unknown batch transmission failure",
+                "confirmed_count": total_synced,
+                "synced_before_error": total_synced,
+                "failed_batch_index": batch_idx,
+                "total_batches": total_batches,
+                "total_records": total_records,
+                "retryable": (last_code in (500, 502, 503, 504)) if last_code else True
+            }
+
+    return {
+        "success": True,
+        "count": total_synced,
+        "confirmed_count": total_synced,
+        "total_records": total_records,
+        "total_batches": total_batches,
+        "message": f"Successfully synced {total_synced} leads to Supabase table '{table_name}'."
+    }
 
 
 def save_scrape_job_to_supabase(job_info: dict, supabase_url=None, supabase_key=None, history_table="scrape_history"):
