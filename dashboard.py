@@ -806,6 +806,21 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             msg = "Using built-in Local Database."
             if configured:
                 ok, msg = test_supabase_connection(url, key, table)
+
+            # Check if caller is authenticated
+            user = self._get_authenticated_user()
+            if not user:
+                # Public response: high-level connectivity indicators only, zero secrets or URLs
+                self._send_json({
+                    "configured": configured,
+                    "connected": ok,
+                    "default_backend": "supabase" if ok else "local",
+                    "auto_sync": os.environ.get("SUPABASE_AUTO_SYNC", "true").lower() == "true",
+                    "message": msg if not ok else "Connected to Supabase Cloud"
+                })
+                return
+
+            # Authenticated response: configuration details with masked key preview
             masked_key = (key[:6] + "..." + key[-4:]) if len(key) > 10 else ("***" if key else "")
             self._send_json({
                 "configured": configured,

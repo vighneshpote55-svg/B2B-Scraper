@@ -1095,9 +1095,9 @@
         </div>
 
         <div class="form-group">
-          <label for="input-supabase-key" class="form-label">Supabase API Key (anon / public or service_role)</label>
+          <label for="input-supabase-key" class="form-label">Supabase Service-Role Secret Key</label>
           <input type="password" id="input-supabase-key" class="form-input" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI..." required autocomplete="off">
-          <small class="field-hint">Found in Project Settings ➜ API ➜ Project API keys</small>
+          <small class="field-hint">Found in Project Settings ➜ API ➜ Project API keys (service_role secret key). Required for backend sync on hardened RLS tables.</small>
         </div>
 
         <div class="form-row">

@@ -62,6 +62,25 @@ def disconnect():
     return True
 
 
+def is_likely_anon_key(key: str) -> bool:
+    """Check if key is a public publishable/anon key rather than service_role key."""
+    if not key or not isinstance(key, str):
+        return False
+    if key.startswith("sb_publishable_"):
+        return True
+    parts = key.split(".")
+    if len(parts) == 3:
+        try:
+            import base64
+            payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(payload_b64.encode("utf-8")).decode("utf-8"))
+            if payload.get("role") == "anon":
+                return True
+        except Exception:
+            pass
+    return False
+
+
 def test_connection(supabase_url=None, supabase_key=None, table=None):
     """Test connection to Supabase PostgREST endpoint."""
     reload_env()
@@ -77,7 +96,10 @@ def test_connection(supabase_url=None, supabase_key=None, table=None):
         return False, "Supabase URL must start with http:// or https://"
 
     if key.startswith("http"):
-        return False, "Your SUPABASE_KEY appears to be a URL instead of an API Key! Please copy the 'anon' public key or 'service_role' key from Supabase Project Settings -> API."
+        return False, "Your SUPABASE_KEY appears to be a URL instead of an API Key! Please copy the private 'service_role' secret key from Supabase Project Settings -> API."
+
+    if is_likely_anon_key(key):
+        return False, "The provided key is a public 'anon' key. Hardened database tables require the server-side 'service_role' secret key (Project Settings -> API -> Project API keys) to bypass RLS and sync backend leads."
 
     endpoint = f"{url}/rest/v1/{tbl}?limit=1"
     headers = {
@@ -98,7 +120,9 @@ def test_connection(supabase_url=None, supabase_key=None, table=None):
         if e.code == 404:
             return False, f"Table '{tbl}' not found in Supabase. Have you run supabase_schema.sql in your Supabase SQL Editor?"
         elif e.code in (401, 403):
-            return False, f"Authentication error (HTTP {e.code}). Verify your Supabase anon/service_role API Key."
+            if is_likely_anon_key(key):
+                return False, f"Authentication error (HTTP {e.code}): Access denied. The provided key is a public 'anon' key. Use your private 'service_role' key."
+            return False, f"Authentication error (HTTP {e.code}). Verify your Supabase service_role API Key."
         return False, f"HTTP Error {e.code}: {err_msg}"
     except Exception as e:
         return False, f"Connection error: {str(e)}"

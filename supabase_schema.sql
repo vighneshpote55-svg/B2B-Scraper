@@ -59,11 +59,17 @@ CREATE TRIGGER trigger_leads_updated_at
 -- 4. Enable Row Level Security (RLS) on leads
 ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 
--- Allow anon and authenticated users full read & write access for local scraper integration
-CREATE POLICY "Allow anon read and insert on leads"
+-- CRITICAL SECURITY HARDENING: Revoke public access and enforce least privilege.
+-- Only the backend server possessing the private service_role key can read, insert,
+-- update, or delete data. Anonymous and untrusted clients are strictly denied.
+REVOKE ALL ON TABLE public.leads FROM anon, authenticated;
+GRANT ALL ON TABLE public.leads TO service_role;
+
+DROP POLICY IF EXISTS "Allow anon read and insert on leads" ON public.leads;
+CREATE POLICY "Service role full access on leads"
     ON public.leads
     FOR ALL
-    TO anon, authenticated, service_role
+    TO service_role
     USING (true)
     WITH CHECK (true);
 
@@ -96,14 +102,20 @@ CREATE INDEX IF NOT EXISTS idx_history_keyword ON public.scrape_history (keyword
 
 ALTER TABLE public.scrape_history ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow anon read and write on scrape_history"
+REVOKE ALL ON TABLE public.scrape_history FROM anon, authenticated;
+GRANT ALL ON TABLE public.scrape_history TO service_role;
+
+DROP POLICY IF EXISTS "Allow anon read and write on scrape_history" ON public.scrape_history;
+CREATE POLICY "Service role full access on scrape_history"
     ON public.scrape_history
     FOR ALL
-    TO anon, authenticated, service_role
+    TO service_role
     USING (true)
     WITH CHECK (true);
 
+-- ==============================================================================
 -- 6. Create 'users' table for storing registered LeadMap user profiles & sessions
+-- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.users (
     id TEXT PRIMARY KEY,
     created_at TIMESTAMPTZ DEFAULT now(),
@@ -119,15 +131,24 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON public.users (email);
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
 -- CRITICAL SECURITY HARDENING: Never grant anon or authenticated roles access
--- to public.users because it contains bcrypt password hashes.
+-- to public.users because it contains password hashes.
 -- Only backend service_role is permitted to read and write.
+REVOKE ALL ON TABLE public.users FROM anon, authenticated;
+GRANT ALL ON TABLE public.users TO service_role;
+
 DROP POLICY IF EXISTS "Allow anon read and write on users" ON public.users;
-CREATE POLICY "Strict service role only on users"
+DROP POLICY IF EXISTS "Strict service role only on users" ON public.users;
+CREATE POLICY "Service role full access on users"
     ON public.users
     FOR ALL
     TO service_role
     USING (true)
     WITH CHECK (true);
 
+-- Ensure service_role has sequence usage for generated identifiers
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;
 
--- Done! Tables public.leads and public.scrape_history are ready for LeadMap Pro sync.
+-- ==============================================================================
+-- Done! Tables public.leads, public.scrape_history, and public.users are hardened
+-- with least-privilege RLS policies accessible strictly to backend service_role.
+-- ==============================================================================
