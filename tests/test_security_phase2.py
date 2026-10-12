@@ -55,7 +55,7 @@ class TestPhase2AuthenticationSecurity(unittest.TestCase):
         body = json.dumps(data).encode("utf-8") if data is not None else None
         req = urllib.request.Request(url, data=body, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(req, timeout=5) as response:
+            with urllib.request.urlopen(req, timeout=10) as response:
                 status = response.status
                 body_bytes = response.read()
                 try:

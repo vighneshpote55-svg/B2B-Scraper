@@ -516,7 +516,7 @@
     }
 
     if (btnThemeToggle) btnThemeToggle.addEventListener('click', triggerThemeToggle);
-    if (btnGateThemeToggle) btnThemeToggle.addEventListener('click', triggerThemeToggle);
+    if (btnGateThemeToggle) btnGateThemeToggle.addEventListener('click', triggerThemeToggle);
   }
 
   function applyTheme(theme, showNotification = false) {

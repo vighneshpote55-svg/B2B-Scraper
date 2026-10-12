@@ -130,8 +130,12 @@ def clean_emails(emails_input, website_url: str = "") -> list:
     return cleaned
 
 
-def clean_phone(phone_input: str) -> str:
-    """Format and normalize phone number into standard readable format."""
+def clean_phone(phone_input: str, default_country: str = "") -> str:
+    """Format and normalize phone number into standard readable international format.
+
+    Note: This performs structural normalization and formatting only; it does not claim
+    telecom carrier verification or active number reachability.
+    """
     if not phone_input or not isinstance(phone_input, str):
         return ""
 
@@ -139,27 +143,88 @@ def clean_phone(phone_input: str) -> str:
     if not raw:
         return ""
 
-    # Keep only digits and leading +
+    has_plus = raw.startswith("+")
     digits = re.sub(r"[^\d]", "", raw)
     if len(digits) < 7:
         return ""
 
-    # Indian phone numbers (+91 or starting with 91, or 0-prefixed 11 digits, or 10-digit mobile 6-9)
-    if raw.startswith("+91") or (len(digits) == 12 and digits.startswith("91")):
+    # Convert international '00' prefix to standard '+' handling
+    if raw.startswith("00") and len(digits) >= 9:
+        digits = digits[2:]
+        has_plus = True
+
+    # International normalization based on standard country calling codes
+    # 1. North American Numbering Plan (+1: US, Canada)
+    if (has_plus and digits.startswith("1") and len(digits) == 11) or (not has_plus and len(digits) == 11 and digits.startswith("1")):
+        return f"+1 ({digits[1:4]}) {digits[4:7]}-{digits[7:11]}"
+
+    # 2. India (+91)
+    if (has_plus and digits.startswith("91") and len(digits) == 12) or (raw.startswith("+91")):
         core = digits[-10:]
         return f"+91 {core[0:5]} {core[5:10]}"
-    elif len(digits) == 11 and digits.startswith("0") and digits[1] in "6789":
+    elif not has_plus and len(digits) == 11 and digits.startswith("0") and digits[1] in "6789":
         core = digits[1:]
         return f"+91 {core[0:5]} {core[5:10]}"
-    elif raw.startswith("+") and not raw.startswith("+1"):
-        return raw
 
-    # North American Numbering Plan: 11 digits starting with 1
-    if len(digits) == 11 and digits.startswith("1"):
-        return f"+1 ({digits[1:4]}) {digits[4:7]}-{digits[7:11]}"
-    elif len(digits) == 10:
-        # If starts with 6, 7, 8, 9, commonly Indian mobile or international
-        if raw.startswith("+91") or digits[0] in "6789":
+    # 3. United Kingdom (+44)
+    if has_plus and digits.startswith("44") and len(digits) in (11, 12, 13):
+        core = digits[2:]
+        if core.startswith("0"):
+            core = core[1:]
+        if len(core) == 10:
+            return f"+44 {core[0:4]} {core[4:]}"
+        return f"+44 {core[0:3]} {core[3:7]} {core[7:]}" if len(core) >= 7 else f"+44 {core}"
+
+    # 4. Australia (+61)
+    if has_plus and digits.startswith("61") and len(digits) in (10, 11, 12):
+        core = digits[2:]
+        if core.startswith("0"):
+            core = core[1:]
+        if len(core) == 9:
+            return f"+61 {core[0]} {core[1:5]} {core[5:]}"
+        return f"+61 {core}"
+
+    # 5. Germany (+49)
+    if has_plus and digits.startswith("49") and len(digits) >= 9:
+        core = digits[2:]
+        if core.startswith("0"):
+            core = core[1:]
+        return f"+49 {core[0:3]} {core[3:]}"
+
+    # 6. France (+33)
+    if has_plus and digits.startswith("33") and len(digits) in (10, 11, 12):
+        core = digits[2:]
+        if core.startswith("0"):
+            core = core[1:]
+        if len(core) == 9:
+            return f"+33 {core[0]} {core[1:3]} {core[3:5]} {core[5:7]} {core[7:]}"
+        return f"+33 {core}"
+
+    # 7. United Arab Emirates (+971)
+    if has_plus and digits.startswith("971") and len(digits) in (11, 12):
+        core = digits[3:]
+        if core.startswith("0"):
+            core = core[1:]
+        return f"+971 {core[0:2]} {core[2:5]} {core[5:]}" if len(core) >= 7 else f"+971 {core}"
+
+    # 8. Singapore (+65)
+    if has_plus and digits.startswith("65") and len(digits) == 10:
+        core = digits[2:]
+        return f"+65 {core[0:4]} {core[4:]}"
+
+    # If already had a plus and unrecognized dial code, format with +
+    if has_plus:
+        return f"+{digits}"
+
+    # If 10 digits without leading +
+    if len(digits) == 10:
+        c = default_country.upper().strip() if default_country else ""
+        if c == "IN":
+            return f"+91 {digits[0:5]} {digits[5:10]}"
+        elif c in ("US", "CA"):
+            return f"+1 ({digits[0:3]}) {digits[3:6]}-{digits[6:10]}"
+        # If starts with 6-9 in Indian context
+        if digits[0] in "6789" and not c:
             return f"+91 {digits[0:5]} {digits[5:10]}"
         return f"+1 ({digits[0:3]}) {digits[3:6]}-{digits[6:10]}"
 
@@ -298,35 +363,120 @@ def clean_lead(record: dict) -> dict:
     return rec
 
 
+GENERIC_DOMAINS = {
+    "facebook.com", "instagram.com", "linkedin.com", "twitter.com",
+    "google.com", "wix.com", "wordpress.com", "site123.com", "weebly.com",
+    "wa.me", "api.whatsapp.com", "youtube.com", "linktr.ee", "bio.link",
+    "squarespace.com", "myshopify.com", "carrd.co"
+}
+
+
+def normalize_business_name(name: str) -> str:
+    """Normalize business name for comparison by removing legal entity suffixes and punctuation."""
+    if not name or not isinstance(name, str):
+        return ""
+    text = name.lower().strip()
+    # Remove common business suffixes (llc, inc, ltd, corp, co, etc.)
+    text = re.sub(r"\b(llc|inc|incorporated|ltd|limited|corp|corporation|co|company)\b\.?", "", text)
+    # Remove punctuation
+    text = re.sub(r"[^\w\s]", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def normalize_address(addr: str) -> str:
+    """Normalize address for deduplication comparison."""
+    if not addr or not isinstance(addr, str):
+        return ""
+    text = addr.lower().strip()
+    # Normalize common roadway and unit abbreviations
+    abbrevs = {
+        r"\bst\b\.?": "street",
+        r"\bave\b\.?": "avenue",
+        r"\brd\b\.?": "road",
+        r"\bblvd\b\.?": "boulevard",
+        r"\bdr\b\.?": "drive",
+        r"\bln\b\.?": "lane",
+        r"\bste\b\.?": "suite",
+        r"\bapt\b\.?": "apartment",
+        r"\bfl\b\.?": "floor",
+        r"\bpkwy\b\.?": "parkway"
+    }
+    for pat, rep in abbrevs.items():
+        text = re.sub(pat, rep, text)
+    text = re.sub(r"[^\w\s]", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def deduplicate_leads(leads: list) -> list:
-    """Deduplicate leads by matching clean phone, domain, or title+address."""
+    """Deduplicate leads by prioritizing stable Google Place IDs, normalized title & address,
+    and corroborated title matches. Different businesses sharing a domain or phone are preserved."""
+    if not leads:
+        return []
+
     unique = []
-    seen_phones = set()
-    seen_domains = set()
-    seen_ident = set()
+    seen_places = set()
+    seen_cids = set()
+    seen_ident_pairs = set()
 
     for item in leads:
-        phone = item.get("clean_phone") or item.get("phone") or ""
-        domain = item.get("domain") or ""
-        title = (item.get("title") or "").strip().lower()
-        address = (item.get("address") or "").strip().lower()
-        ident = f"{title}|{address}"
+        pid = (item.get("place_id") or "").strip()
+        cid = str(item.get("cid") or "").strip()
+        raw_title = item.get("title") or ""
+        norm_title = normalize_business_name(raw_title)
+        raw_addr = item.get("address") or ""
+        norm_addr = normalize_address(raw_addr)
+        raw_phone = item.get("clean_phone") or item.get("phone") or ""
+        phone = re.sub(r"[^\d]", "", str(raw_phone))[-10:] if raw_phone else ""
+        domain = (item.get("domain") or "").lower().strip()
 
-        if phone and phone in seen_phones:
-            continue
-        if domain and domain in seen_domains:
-            continue
-        if ident and ident != "|" and ident in seen_ident:
-            continue
+        is_dup = False
 
-        if phone:
-            seen_phones.add(phone)
-        if domain:
-            seen_domains.add(domain)
-        if ident and ident != "|":
-            seen_ident.add(ident)
+        # 1. Stable Google Place ID match
+        if pid and pid in seen_places:
+            is_dup = True
 
-        unique.append(item)
+        # 2. Stable Google CID match
+        elif cid and cid != "0" and cid in seen_cids:
+            is_dup = True
+
+        # 3. Exact normalized title + normalized address
+        elif norm_title and norm_addr and (norm_title, norm_addr) in seen_ident_pairs:
+            is_dup = True
+
+        # 4. Corroborated check: only consider duplicates if title matches AND (phone or domain or address matches)
+        else:
+            for prev in unique:
+                p_title = normalize_business_name(prev.get("title") or "")
+                p_addr = normalize_address(prev.get("address") or "")
+                p_phone_raw = prev.get("clean_phone") or prev.get("phone") or ""
+                p_phone = re.sub(r"[^\d]", "", str(p_phone_raw))[-10:] if p_phone_raw else ""
+                p_domain = (prev.get("domain") or "").lower().strip()
+
+                # If titles are identical or one is clearly a variant/substring of the other
+                title_matches = bool(norm_title and p_title and (norm_title == p_title or norm_title in p_title or p_title in norm_title))
+
+                if title_matches:
+                    # Title matches AND phone matches
+                    if phone and p_phone and phone == p_phone and len(phone) >= 7:
+                        is_dup = True
+                        break
+                    # Title matches AND non-generic domain matches
+                    if domain and p_domain and domain == p_domain and domain not in GENERIC_DOMAINS:
+                        is_dup = True
+                        break
+                    # Title matches AND address matches
+                    if norm_addr and p_addr and norm_addr == p_addr:
+                        is_dup = True
+                        break
+
+        if not is_dup:
+            unique.append(item)
+            if pid:
+                seen_places.add(pid)
+            if cid and cid != "0":
+                seen_cids.add(cid)
+            if norm_title and norm_addr:
+                seen_ident_pairs.add((norm_title, norm_addr))
 
     return unique
 
@@ -650,81 +800,73 @@ def load_historical_leads(data_dir: str, exclude_job_id: str = "") -> list:
 def filter_previously_seen_leads(leads: list, historical_leads: list) -> tuple:
     """Filter out leads that already exist in historical_leads.
 
-    Matches on:
-    - place_id (Google unique Place ID)
-    - cid (Google Customer ID)
-    - phone / clean_phone digits (last 10 digits)
-    - domain (excluding generic hosting/social domains)
-    - normalized title + address
+    Prioritizes stable Google Place IDs, normalized title+address, and corroborated title matches.
+    Different businesses sharing a domain or phone are preserved.
 
     Returns:
         (new_leads, skipped_leads)
     """
     seen_place_ids = set()
     seen_cids = set()
-    seen_phones = set()
-    seen_domains = set()
-    seen_idents = set()
-
-    GENERIC_DOMAINS = {
-        "facebook.com", "instagram.com", "linkedin.com", "twitter.com",
-        "google.com", "wix.com", "wordpress.com", "site123.com", "weebly.com",
-        "wa.me", "api.whatsapp.com", "youtube.com"
-    }
+    seen_title_addresses = set()
+    seen_title_phones = set()
+    seen_title_domains = set()
 
     for item in historical_leads:
-        pid = item.get("place_id") or ""
-        cid = str(item.get("cid") or "")
-        phone = item.get("clean_phone") or item.get("phone") or ""
-        domain = (item.get("domain") or "").lower()
-        title = (item.get("title") or "").strip().lower()
-        address = (item.get("address") or "").strip().lower()
+        pid = (item.get("place_id") or "").strip()
+        cid = str(item.get("cid") or "").strip()
+        norm_title = normalize_business_name(item.get("title") or "")
+        norm_addr = normalize_address(item.get("address") or "")
+        raw_phone = item.get("clean_phone") or item.get("phone") or ""
+        phone_digits = re.sub(r"[^\d]", "", str(raw_phone))[-10:] if raw_phone else ""
+        domain = (item.get("domain") or "").lower().strip()
 
         if pid:
             seen_place_ids.add(pid)
         if cid and cid != "0":
             seen_cids.add(cid)
-        if phone:
-            digits = re.sub(r"[^\d]", "", str(phone))
-            if len(digits) >= 8:
-                seen_phones.add(digits[-10:])
-        if domain and domain not in GENERIC_DOMAINS:
-            seen_domains.add(domain)
-        if title and address:
-            seen_idents.add(f"{title}|{address}")
+        if norm_title and norm_addr:
+            seen_title_addresses.add((norm_title, norm_addr))
+        if norm_title and phone_digits and len(phone_digits) >= 8:
+            seen_title_phones.add((norm_title, phone_digits))
+        if norm_title and domain and domain not in GENERIC_DOMAINS:
+            seen_title_domains.add((norm_title, domain))
 
     new_leads = []
     skipped_leads = []
 
     for item in leads:
-        pid = item.get("place_id") or ""
-        cid = str(item.get("cid") or "")
-        phone = item.get("clean_phone") or item.get("phone") or ""
-        domain = (item.get("domain") or "").lower()
-        title = (item.get("title") or "").strip().lower()
-        address = (item.get("address") or "").strip().lower()
-        ident = f"{title}|{address}"
-
-        phone_digits = re.sub(r"[^\d]", "", str(phone))[-10:] if phone else ""
+        pid = (item.get("place_id") or "").strip()
+        cid = str(item.get("cid") or "").strip()
+        norm_title = normalize_business_name(item.get("title") or "")
+        norm_addr = normalize_address(item.get("address") or "")
+        raw_phone = item.get("clean_phone") or item.get("phone") or ""
+        phone_digits = re.sub(r"[^\d]", "", str(raw_phone))[-10:] if raw_phone else ""
+        domain = (item.get("domain") or "").lower().strip()
 
         is_duplicate = False
         duplicate_reason = ""
 
+        # 1. Place ID match (Exact stable Google ID)
         if pid and pid in seen_place_ids:
             is_duplicate = True
-            duplicate_reason = "Already in past scrape (matched Google Place ID)"
+            duplicate_reason = "Already in past scrape (HIGH confidence: matched Google Place ID)"
+        # 2. CID match (Exact Google Customer ID)
         elif cid and cid != "0" and cid in seen_cids:
             is_duplicate = True
-            duplicate_reason = "Already in past scrape (matched Google CID)"
-        elif phone_digits and len(phone_digits) >= 8 and phone_digits in seen_phones:
+            duplicate_reason = "Already in past scrape (HIGH confidence: matched Google CID)"
+        # 3. Normalized Name & Address match
+        elif norm_title and norm_addr and (norm_title, norm_addr) in seen_title_addresses:
             is_duplicate = True
-            duplicate_reason = "Already in past scrape (matched Phone number)"
-        elif domain and domain not in GENERIC_DOMAINS and domain in seen_domains:
+            duplicate_reason = "Already in past scrape (HIGH confidence: matched Name & Address)"
+        # 4. Corroborated Name & Phone match
+        elif norm_title and phone_digits and len(phone_digits) >= 8 and (norm_title, phone_digits) in seen_title_phones:
             is_duplicate = True
-            duplicate_reason = "Already in past scrape (matched Website domain)"
-        elif ident and ident != "|" and ident in seen_idents:
+            duplicate_reason = "Already in past scrape (HIGH confidence: matched Name & Phone)"
+        # 5. Corroborated Name & Website domain match
+        elif norm_title and domain and domain not in GENERIC_DOMAINS and (norm_title, domain) in seen_title_domains:
             is_duplicate = True
-            duplicate_reason = "Already in past scrape (matched Name & Address)"
+            duplicate_reason = "Already in past scrape (HIGH confidence: matched Name & Website domain)"
 
         if is_duplicate:
             item_copy = dict(item)
@@ -734,12 +876,17 @@ def filter_previously_seen_leads(leads: list, historical_leads: list) -> tuple:
         else:
             item["is_new"] = True
             new_leads.append(item)
-            # Add to local sets so within this batch it doesn't duplicate
-            if pid: seen_place_ids.add(pid)
-            if cid and cid != "0": seen_cids.add(cid)
-            if phone_digits and len(phone_digits) >= 8: seen_phones.add(phone_digits)
-            if domain and domain not in GENERIC_DOMAINS: seen_domains.add(domain)
-            if ident and ident != "|": seen_idents.add(ident)
+            # Add to local sets for deduplication within the current batch
+            if pid:
+                seen_place_ids.add(pid)
+            if cid and cid != "0":
+                seen_cids.add(cid)
+            if norm_title and norm_addr:
+                seen_title_addresses.add((norm_title, norm_addr))
+            if norm_title and phone_digits and len(phone_digits) >= 8:
+                seen_title_phones.add((norm_title, phone_digits))
+            if norm_title and domain and domain not in GENERIC_DOMAINS:
+                seen_title_domains.add((norm_title, domain))
 
     return new_leads, skipped_leads
 

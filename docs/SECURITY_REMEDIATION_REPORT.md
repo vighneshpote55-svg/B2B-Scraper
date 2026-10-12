@@ -362,14 +362,48 @@ A dedicated automated test suite was implemented in [`tests/test_ssrf_and_config
 
 ---
 
-## 11. Cumulative Test Suite Summary Across All Phases
+## 11. Phase 6: Lead Quality, Intelligent Deduplication & Regression Hardening
 
-Total regression test suite executed across all 5 remediation phases:
+Phase 6 resolved false deduplication drops, improved phone normalization, verified lead scoring thresholds, tested exports and injection defenses, and validated UI assets:
+
+### 11.1 Key Remediations & Improvements
+1. **Multi-Criteria Intelligent Deduplication (`scripts/cleanser.py`)**:
+   - Previously, leads sharing a phone number or domain were unconditionally discarded as duplicates. In real-world data, separate medical clinics, shopping center tenants, or subsidiaries frequently share telephone switchboards or website portals (e.g. `facebook.com`, `linktr.ee`, `medical-center.org`).
+   - Implemented `normalize_business_name()` (stripping common legal suffixes like LLC, Inc, Ltd, punctuation, whitespace) and `normalize_address()` (standardizing Street/St, Avenue/Ave, Suite/Ste, etc.).
+   - Prioritized stable Google `place_id`, non-zero `cid`, and exact normalized `(title, address)` pairs.
+   - Enforced title corroboration: different businesses sharing a phone or domain are **preserved** (not discarded).
+   - Applied identical multi-criteria matching to `filter_previously_seen_leads()`, ensuring distinct businesses sharing a phone or domain are correctly flagged with `is_new=True`.
+2. **Country-Aware International Phone Normalization**:
+   - Refactored `clean_phone(phone_input: str, default_country: str = "")` to handle NANP (US/Canada `+1`), UK (`+44`), India (`+91`), Australia (`+61`), Germany (`+49`), France (`+33`), UAE (`+971`), and Singapore (`+65`).
+   - Handles international exit prefixes (`00`), domestic trunk `0` prefixes, and formats into readable standard groupings without claiming unverified carrier network verification.
+   - Discards short (< 7 digits) and non-numeric junk.
+3. **Lead Scoring Boundaries & Robustness**:
+   - Verified exact scoring thresholds in `score_lead()`: empty/blank records score `0`, email-only scores `35` (Cold), email+phone scores `55` (Warm), high reviews and ratings hit `70+` (Hot), and complete profiles are capped at `100`.
+   - Verified graceful handling of null, missing, and malformed field types without throwing exceptions.
+4. **Junk Email Cleansing & Social Extraction**:
+   - Verified rejection of asset extensions (`.png`, `.jpg`), generic prefixes (`support@`, `billing@`), and junk domains (`sentry.io`, `wixpress.com`).
+   - Verified prioritization of domain-matching emails and social URL tracking parameter sanitization (`?utm_*`, `?igshid=*`).
+5. **CSV/CRM Export Formula Injection Defense**:
+   - Verified that spreadsheet formula injection characters (`=`, `+`, `-`, `@`, `\t`, `\r`) are safely neutralized with `'` escaping while preserving valid integers, floats, and geographical coordinates.
+6. **Dark / Light / Monochrome Theme UI Assets**:
+   - Verified CSS variables for `theme-dark`, `theme-light`, and `theme-mono` in `web/app.css`.
+   - Fixed theme toggle listener in `web/app.js` to ensure both navigation bar and login gate theme switches work reliably.
+
+### 11.2 Phase 6 Empirical Test Verification
+
+A dedicated automated test suite was implemented in [`tests/test_lead_quality_phase6.py`](file:///home/vighnesh/Documents/B2B/tests/test_lead_quality_phase6.py):
+- **42 / 42 tests passing** in `tests/test_lead_quality_phase6.py`.
+
+---
+
+## 12. Cumulative Test Suite Summary Across All Phases
+
+Total regression test suite executed across all 6 remediation phases:
 ```bash
-python3 -m unittest -v tests/test_security_phase1.py tests/test_security_phase2.py tests/test_security_phase3.py tests/test_safe_supabase_sync.py tests/test_ssrf_and_config_phase5.py
+python3 -m unittest -v tests/test_security_phase1.py tests/test_security_phase2.py tests/test_security_phase3.py tests/test_safe_supabase_sync.py tests/test_ssrf_and_config_phase5.py tests/test_lead_quality_phase6.py
 ```
 ```text
-Ran 82 tests in 22.029s
+Ran 124 tests in 19.623s
 
 OK
 ```
@@ -378,18 +412,20 @@ OK
 - **Phase 3: Supabase Security**: 10 / 10 passing (100%)
 - **Phase 4: Safe Supabase Sync**: 9 / 9 passing (100%)
 - **Phase 5: SSRF & Configuration Hardening**: 27 / 27 passing (100%)
-- **Total Tested**: **82 / 82 passing (0 failures, 0 errors, 0 regressions)**
+- **Phase 6: Lead Quality & Deduplication**: 42 / 42 passing (100%)
+- **Total Tested Across Entire Repository**: **124 / 124 passing (0 failures, 0 errors, 0 regressions)**
 
 ---
 
-## 12. Remaining Blockers Before Public Deployment
+## 13. Remaining Blockers Before Public Deployment
 
-While all critical authentication, Supabase RLS security, safe synchronization, and SSRF capabilities are fully remediated and verified, the following items remain before multi-tenant SaaS hosting:
+While all critical authentication, Supabase RLS security, safe synchronization, SSRF defense, and lead cleansing deduplication capabilities are fully remediated and verified, the following items remain before multi-tenant SaaS hosting:
 
 1. **Job Queue & Concurrency Throttling (`REL-01`)**:
    - `dashboard.py` currently spawns worker threads per scrape request. A public multi-tenant deployment requires a bounded job queue (e.g. semaphore limiting concurrent scrape jobs to 2) to prevent memory exhaustion.
 2. **Crash Recovery Persistence (`REL-02`)**:
    - In-memory `JOB_CACHE` should persist active job progress to SQLite or a state file so running jobs can resume if the server restarts.
+
 
 
 
