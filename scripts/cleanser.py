@@ -9,11 +9,13 @@ Features:
 - Deduplication across leads based on phone, domain, or address.
 """
 import glob
+import http.client
 import ipaddress
 import json
 import os
 import re
 import socket
+import ssl
 import urllib.parse
 import urllib.request
 
@@ -343,37 +345,56 @@ _SKIP_HANDLES = {
     "groups", "marketplace", "gaming", "photo", "hashtag", "search", "pg"
 }
 
+BLOCKED_HOSTNAMES = {
+    "localhost", "localhost.localdomain", "local",
+    "metadata.google.internal", "metadata.google",
+    "instance-data", "metadata"
+}
+
 def is_safe_public_ip(ip_str: str) -> bool:
-    """Verify that an IP address is public and routable, blocking loopback, private, link-local, and cloud metadata."""
+    """Verify that an IP address is public and routable, blocking loopback,
+    private, link-local, multicast, reserved, unspecified, carrier-grade NAT,
+    and cloud metadata destinations."""
     try:
         ip = ipaddress.ip_address(ip_str)
+        # Handle IPv4-mapped IPv6 addresses (::ffff:x.x.x.x)
+        if getattr(ip, "ipv4_mapped", None):
+            ip = ip.ipv4_mapped
+
+        # Any non-global IP is not safe (covers loopback, private, link-local, CGNAT 100.64.0.0/10, ULA fc00::/7, unspecified, reserved)
+        if not ip.is_global:
+            return False
+
         if (ip.is_private or ip.is_loopback or ip.is_link_local or
             ip.is_multicast or ip.is_reserved or ip.is_unspecified):
             return False
-        # Explicit cloud metadata check (AWS/GCP/Azure link-local metadata)
-        if str(ip) == "169.254.169.254":
+
+        # Specific cloud metadata addresses
+        s = str(ip)
+        if s in ("169.254.169.254", "169.254.170.2", "fd00:ec2::254"):
             return False
+
         return True
     except (ValueError, TypeError):
         return False
 
-def validate_url_for_ssrf(url: str) -> tuple:
-    """Validate URL scheme and ensure all resolved DNS IPs are public.
+def resolve_and_validate_url(url: str) -> tuple:
+    """Validate URL scheme and resolve DNS IPs, ensuring all are safe and public.
     
-    Returns (is_safe: bool, error_reason: str, normalized_url: str).
+    Returns (is_safe: bool, error_reason: str, normalized_url: str, resolved_ip: str).
     """
     if not url or not isinstance(url, str):
-        return False, "Empty URL", ""
-    
+        return False, "Empty URL", "", ""
+
     raw = url.strip()
     if not raw:
-        return False, "Empty URL", ""
+        return False, "Empty URL", "", ""
 
     # Detect non-http schemes before adding http://
     parsed_check = urllib.parse.urlparse(raw)
     scheme = parsed_check.scheme.lower()
     if scheme and scheme not in ("http", "https"):
-        return False, f"Disallowed scheme: {scheme}", ""
+        return False, f"Disallowed scheme: {scheme}", "", ""
 
     if not raw.startswith(("http://", "https://")):
         raw = "http://" + raw
@@ -381,35 +402,60 @@ def validate_url_for_ssrf(url: str) -> tuple:
     try:
         parsed = urllib.parse.urlparse(raw)
     except Exception as e:
-        return False, f"Invalid URL: {e}", ""
+        return False, f"Invalid URL: {e}", "", ""
 
     if parsed.scheme.lower() not in ("http", "https"):
-        return False, f"Disallowed scheme: {parsed.scheme}", ""
+        return False, f"Disallowed scheme: {parsed.scheme}", "", ""
+
+    # Reject credentials embedded in URL
+    if parsed.username or parsed.password:
+        return False, "Embedded credentials in URL are prohibited", "", ""
 
     hostname = parsed.hostname
     if not hostname:
-        return False, "Missing hostname", ""
+        return False, "Missing hostname", "", ""
 
-    # Immediate rejection of known loopback/local names
-    clean_host = hostname.strip().lower()
-    if clean_host in ("localhost", "localhost.localdomain") or clean_host.endswith(".localhost"):
-        return False, "Localhost addresses are blocked", ""
+    clean_host = hostname.strip().lower().rstrip(".")
+    if (clean_host in BLOCKED_HOSTNAMES or
+        clean_host.endswith(".localhost") or
+        clean_host.endswith(".local") or
+        clean_host.endswith(".internal") or
+        clean_host.endswith(".arpa")):
+        return False, f"Restricted destination host: {clean_host}", "", ""
+
+    # Check direct IP literals first
+    try:
+        ip_obj = ipaddress.ip_address(clean_host)
+        if not is_safe_public_ip(str(ip_obj)):
+            return False, f"Direct IP destination {clean_host} is non-public or restricted", "", ""
+    except ValueError:
+        pass
 
     # Pre-flight DNS resolution to check all resolved target IPs
     port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
     try:
         addr_info = socket.getaddrinfo(clean_host, port, proto=socket.IPPROTO_TCP)
         if not addr_info:
-            return False, f"DNS resolution failed for {clean_host}", ""
+            return False, f"DNS resolution failed for {clean_host}", "", ""
+        safe_ip = None
         for item in addr_info:
             sockaddr = item[4]
             ip_str = sockaddr[0]
             if not is_safe_public_ip(ip_str):
-                return False, f"Resolved destination IP {ip_str} is non-public or restricted", ""
+                return False, f"Resolved destination IP {ip_str} is non-public or restricted", "", ""
+            if safe_ip is None:
+                safe_ip = ip_str
+        return True, "", raw, safe_ip
     except Exception as e:
-        return False, f"DNS resolution failed for {clean_host}: {e}", ""
+        return False, f"DNS resolution failed for {clean_host}: {e}", "", ""
 
-    return True, "", raw
+def validate_url_for_ssrf(url: str) -> tuple:
+    """Validate URL scheme and ensure all resolved DNS IPs are public.
+    
+    Returns (is_safe: bool, error_reason: str, normalized_url: str).
+    """
+    ok, reason, norm, _ = resolve_and_validate_url(url)
+    return ok, reason, norm
 
 class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
     """Intercept HTTP redirects to ensure redirect destinations do not bypass SSRF checks."""
@@ -421,20 +467,118 @@ class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 _safe_opener = urllib.request.build_opener(SafeRedirectHandler)
 
-def _fetch_site_html(url: str, timeout: int = 8) -> str:
-    """Safely fetch website HTML with SSRF defense, redirect validation, and byte limits."""
-    is_safe, reason, safe_url = validate_url_for_ssrf(url)
-    if not is_safe:
-        return ""
-    try:
-        req = urllib.request.Request(safe_url, headers={
+class PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS connection that connects directly to a pre-validated IP address while
+    preserving domain certificate validation and SNI."""
+    def __init__(self, ip_str: str, port: int, server_hostname: str, timeout: int = 8, context=None):
+        super().__init__(ip_str, port=port, timeout=timeout, context=context)
+        self.server_hostname = server_hostname
+
+    def connect(self):
+        http.client.HTTPConnection.connect(self)
+        self.sock = self._context.wrap_socket(
+            self.sock,
+            server_hostname=self.server_hostname
+        )
+
+def _fetch_site_html(url: str, timeout: int = 8, max_redirects: int = 3, max_size: int = 500_000) -> str:
+    """Safely fetch website HTML with SSRF defense, DNS rebinding elimination via pinned sockets,
+    redirect validation, content-type verification, and response byte limits."""
+    current_url = url
+    redirect_count = 0
+    ssl_context = ssl.create_default_context()
+
+    while redirect_count <= max_redirects:
+        is_safe, reason, normalized_url, resolved_ip = resolve_and_validate_url(current_url)
+        if not is_safe or not resolved_ip:
+            return ""
+
+        parsed = urllib.parse.urlparse(normalized_url)
+        scheme = parsed.scheme.lower()
+        port = parsed.port or (443 if scheme == "https" else 80)
+        hostname = parsed.hostname
+        path_query = (parsed.path or "/") + (f"?{parsed.query}" if parsed.query else "")
+
+        # Format Host header (include port if non-standard)
+        if (scheme == "https" and port != 443) or (scheme == "http" and port != 80):
+            host_header = f"{hostname}:{port}"
+        else:
+            host_header = hostname
+
+        headers = {
+            "Host": host_header,
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml"
-        })
-        with _safe_opener.open(req, timeout=timeout) as resp:
-            return resp.read(300_000).decode("utf-8", "replace")
-    except Exception:
-        return ""
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Encoding": "identity",
+            "Connection": "close"
+        }
+
+        conn = None
+        try:
+            if scheme == "https":
+                conn = PinnedHTTPSConnection(
+                    resolved_ip,
+                    port=port,
+                    server_hostname=hostname,
+                    timeout=timeout,
+                    context=ssl_context
+                )
+            else:
+                conn = http.client.HTTPConnection(
+                    resolved_ip,
+                    port=port,
+                    timeout=timeout
+                )
+
+            conn.request("GET", path_query, headers=headers)
+            resp = conn.getresponse()
+
+            # Handle redirects (301, 302, 303, 307, 308)
+            if resp.status in (301, 302, 303, 307, 308):
+                location = resp.getheader("Location")
+                if not location:
+                    return ""
+                redirect_count += 1
+                if redirect_count > max_redirects:
+                    return ""
+                current_url = urllib.parse.urljoin(normalized_url, location)
+                continue
+
+            if resp.status != 200:
+                return ""
+
+            # Enforce Content-Type limit (allow text/html, application/xhtml+xml, text/*)
+            content_type = resp.getheader("Content-Type", "").lower()
+            if content_type:
+                media_type = content_type.split(";")[0].strip()
+                if not (media_type.startswith("text/") or media_type in ("application/xhtml+xml", "application/xml")):
+                    return ""
+
+            # Check Content-Length header limit
+            cl_header = resp.getheader("Content-Length")
+            if cl_header:
+                try:
+                    if int(cl_header) > max_size:
+                        return ""
+                except ValueError:
+                    pass
+
+            # Read bounded body up to max_size bytes
+            body_bytes = resp.read(max_size + 1)
+            if len(body_bytes) > max_size:
+                return ""
+
+            return body_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            return ""
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    return ""
 
 def find_socials_in_html(html: str) -> dict:
     """Extract first valid social profile links found in HTML content."""

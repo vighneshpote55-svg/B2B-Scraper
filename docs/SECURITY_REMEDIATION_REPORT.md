@@ -322,14 +322,54 @@ A dedicated mocked test suite was implemented in [`tests/test_safe_supabase_sync
 
 ---
 
-## 10. Cumulative Test Suite Summary Across All Phases
+## 10. Phase 5: SSRF and Configuration Hardening
 
-Total test suite across Phases 1, 2, 3, and 4:
+Phase 5 remediated Server-Side Request Forgery (SSRF) and DNS rebinding risks during website social profile enrichment, guarded against arbitrary user URL fetching, and standardized port and base URL configuration across the codebase.
+
+### 10.1 Key Remediations
+1. **Strict IP & Destination Filtering (`is_safe_public_ip`)**:
+   - Rejects loopback IPv4 (`127.0.0.0/8`, `localhost`) and IPv6 (`::1`).
+   - Rejects private RFC1918 IPv4 (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) and IPv6 Unique Local Addresses (`fc00::/7`).
+   - Rejects link-local IPv4 (`169.254.0.0/16`) and IPv6 (`fe80::/10`).
+   - Rejects multicast (`224.0.0.0/4`, `ff00::/8`), reserved (`240.0.0.0/4`), and unspecified (`0.0.0.0`, `::`) addresses.
+   - Rejects Carrier-Grade NAT (`100.64.0.0/10`).
+   - Rejects cloud metadata endpoints (`169.254.169.254`, `169.254.170.2`, `[fd00:ec2::254]`, `metadata.google.internal`).
+   - Rejects IPv4-mapped IPv6 internal destinations (e.g., `::ffff:127.0.0.1`, `::ffff:169.254.169.254`).
+2. **DNS Rebinding Immunity via Pinned Socket Connections (`PinnedHTTPSConnection`)**:
+   - Standard HTTP fetchers resolve DNS once during pre-validation and again during socket connection, allowing DNS rebinding attacks via TTL=0 dynamic DNS responses.
+   - Re-implemented `_fetch_site_html()` to resolve DNS once via `socket.getaddrinfo()`, validate all returned IP addresses, and connect the socket directly to the validated IP.
+   - Implemented `PinnedHTTPSConnection`, which sets `server_hostname=hostname` on the TLS socket for SNI and certificate validation while routing the TCP socket directly to the pre-verified IP.
+3. **HTTP Redirect Re-Validation & Hop Limits**:
+   - Manually handles HTTP redirects (301, 302, 303, 307, 308).
+   - Re-runs complete scheme and DNS IP validation on every redirect destination.
+   - Enforces a maximum redirect depth of 3 (`max_redirects = 3`), aborting loops and redirect chains targeting internal addresses.
+4. **Content-Type & Response Size Guardrails**:
+   - Inspects `Content-Type`: only `text/html`, `application/xhtml+xml`, or `text/*` are accepted; binary formats (images, PDFs, executables) abort immediately.
+   - Inspects `Content-Length` and enforces a maximum response size limit of 500 KB (`max_size = 500_000`). Streamed payloads larger than 500 KB abort immediately.
+   - Enforces socket connection and read timeouts (default 8 seconds).
+5. **Configuration Alignment**:
+   - Standardized `SCRAPER_PORT=8085` and `SCRAPER_BASE_URL=http://localhost:8085` across `.env.example`, `scripts/scrape.py`, `scripts/scrape.sh`, and `dashboard.py`.
+   - Ensures copying `.env.example` to `.env` seamlessly connects to Docker Compose's published host port (`127.0.0.1:${SCRAPER_PORT:-8085}:8080`).
+6. **Database Connection URL Guard**:
+   - Hardened `test_connection()` in `scripts/supabase_client.py` and `dashboard.py` against arbitrary URL input, verifying scheme and rejecting cloud metadata endpoints.
+7. **Business Social Enrichment Preservation**:
+   - Legitimate public business domains (e.g. `example.com`, `google.com`) enrich Instagram, Facebook, and LinkedIn links normally without degradation.
+
+### 10.2 Phase 5 Empirical Test Verification
+
+A dedicated automated test suite was implemented in [`tests/test_ssrf_and_config_phase5.py`](file:///home/vighnesh/Documents/B2B/tests/test_ssrf_and_config_phase5.py):
+- **27 / 27 tests passing** in `tests/test_ssrf_and_config_phase5.py`.
+
+---
+
+## 11. Cumulative Test Suite Summary Across All Phases
+
+Total regression test suite executed across all 5 remediation phases:
 ```bash
-python3 -m unittest -v tests/test_security_phase1.py tests/test_security_phase2.py tests/test_security_phase3.py tests/test_safe_supabase_sync.py
+python3 -m unittest -v tests/test_security_phase1.py tests/test_security_phase2.py tests/test_security_phase3.py tests/test_safe_supabase_sync.py tests/test_ssrf_and_config_phase5.py
 ```
 ```text
-Ran 55 tests in 22.140s
+Ran 82 tests in 22.029s
 
 OK
 ```
@@ -337,17 +377,19 @@ OK
 - **Phase 2: Authentication Repair**: 10 / 10 passing (100%)
 - **Phase 3: Supabase Security**: 10 / 10 passing (100%)
 - **Phase 4: Safe Supabase Sync**: 9 / 9 passing (100%)
-- **Total Tested**: **55 / 55 passing (0 failures, 0 errors, 0 regressions)**
+- **Phase 5: SSRF & Configuration Hardening**: 27 / 27 passing (100%)
+- **Total Tested**: **82 / 82 passing (0 failures, 0 errors, 0 regressions)**
 
 ---
 
-## 11. Remaining Blockers Before Public Deployment
+## 12. Remaining Blockers Before Public Deployment
 
-While all critical authentication, Supabase RLS security, and safe synchronization capabilities are fully remediated and verified, the following items remain before multi-tenant SaaS hosting:
+While all critical authentication, Supabase RLS security, safe synchronization, and SSRF capabilities are fully remediated and verified, the following items remain before multi-tenant SaaS hosting:
 
 1. **Job Queue & Concurrency Throttling (`REL-01`)**:
    - `dashboard.py` currently spawns worker threads per scrape request. A public multi-tenant deployment requires a bounded job queue (e.g. semaphore limiting concurrent scrape jobs to 2) to prevent memory exhaustion.
 2. **Crash Recovery Persistence (`REL-02`)**:
    - In-memory `JOB_CACHE` should persist active job progress to SQLite or a state file so running jobs can resume if the server restarts.
+
 
 

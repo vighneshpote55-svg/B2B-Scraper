@@ -46,7 +46,7 @@ except ImportError:
         _fetch_site_html = lambda *args, **kwargs: ""
         sanitize_csv_row = lambda x: x
 
-BASE = os.environ.get("SCRAPER_BASE_URL", "http://localhost:8080")
+BASE = os.environ.get("SCRAPER_BASE_URL", "http://localhost:8085")
 KEY = os.environ.get("SCRAPER_API_KEY", "")
 # Money-useful LEAD fields only — what you actually use to contact/qualify a lead.
 # Everything else (geo coordinates, IDs, hours, images, reviews blobs…) is dropped by default.

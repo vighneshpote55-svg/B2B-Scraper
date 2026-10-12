@@ -92,8 +92,24 @@ def test_connection(supabase_url=None, supabase_key=None, table=None):
     if not (url and key):
         return False, "Missing Supabase URL or API Key."
 
-    if not url.startswith("http"):
+    if not url or not isinstance(url, str):
+        return False, "Supabase URL is required."
+
+    try:
+        parsed = urllib.parse.urlparse(url.strip())
+    except Exception as e:
+        return False, f"Invalid Supabase URL: {e}"
+
+    if parsed.scheme.lower() not in ("http", "https"):
         return False, "Supabase URL must start with http:// or https://"
+
+    hostname = parsed.hostname
+    if not hostname:
+        return False, "Supabase URL must contain a valid domain or host."
+
+    clean_host = hostname.strip().lower()
+    if clean_host in ("169.254.169.254", "169.254.170.2", "metadata.google.internal", "metadata.google", "instance-data", "metadata") or clean_host.endswith(".internal"):
+        return False, "Restricted destination URL: cloud metadata destinations are blocked."
 
     if key.startswith("http"):
         return False, "Your SUPABASE_KEY appears to be a URL instead of an API Key! Please copy the private 'service_role' secret key from Supabase Project Settings -> API."
@@ -126,6 +142,9 @@ def test_connection(supabase_url=None, supabase_key=None, table=None):
         return False, f"HTTP Error {e.code}: {err_msg}"
     except Exception as e:
         return False, f"Connection error: {str(e)}"
+
+# Alias for backwards compatibility
+test_supabase_connection = test_connection
 
 
 def format_lead_for_supabase(lead: dict, job_id: str = "") -> dict:

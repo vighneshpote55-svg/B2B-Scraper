@@ -11,7 +11,7 @@ if [ -f "$(dirname "$0")/../.env" ]; then
   set +a
 fi
 
-BASE="${SCRAPER_BASE_URL:-http://localhost:8080}"
+BASE="${SCRAPER_BASE_URL:-http://localhost:8085}"
 KEY="${SCRAPER_API_KEY:-}"
 # NOTE: empty-array expansion needs the ${a[@]+...} guard — plain "${AUTH[@]}" is an
 # unbound-variable error under 'set -u' on bash 3.2 (stock macOS), which is the
