@@ -544,7 +544,7 @@
     const btnGateThemeToggle = document.getElementById('btn-gate-theme-toggle');
     const urlParams = new URLSearchParams(window.location.search);
     const themeParam = urlParams.get('theme');
-    const savedTheme = themeParam || localStorage.getItem('leadmap-theme') || 'dark';
+    const savedTheme = themeParam || localStorage.getItem('leadmap-theme') || localStorage.getItem('leadmap_theme') || 'dark';
     applyTheme(savedTheme, false);
 
     function triggerThemeToggle() {
@@ -578,6 +578,9 @@
   function applyTheme(theme, showNotification = false) {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('leadmap-theme', theme);
+    try {
+      localStorage.setItem('leadmap_theme', theme);
+    } catch (e) {}
 
     const gateSun = document.getElementById('gate-theme-icon-sun');
     const gateMoon = document.getElementById('gate-theme-icon-moon');

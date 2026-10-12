@@ -5,6 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LeadMap Pro — Google Maps Lead Intelligence Dashboard</title>
   <meta name="description" content="Turn Google Maps searches into clean, enriched B2B lead lists with verified phones, emails, websites, ratings, and instant lead scoring.">
+  <!-- Anti-Flash of Wrong Theme (FOUC Prevention) -->
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('leadmap-theme') || localStorage.getItem('leadmap_theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', saved);
+      } catch (e) {}
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
