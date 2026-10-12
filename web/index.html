@@ -533,7 +533,7 @@
             </svg>
           </button>
 
-          <button id="btn-toggle-history" class="btn btn-ghost" title="View Scrape History">
+          <button id="btn-toggle-history" class="btn btn-ghost" title="View Scrape History" aria-label="View Scrape History" aria-haspopup="dialog" aria-expanded="false">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10"></circle>
               <polyline points="12 6 12 12 16 14"></polyline>
@@ -568,6 +568,28 @@
 
   <!-- Main Content Area -->
   <main class="main-container">
+    <!-- Executive Overview Header -->
+    <header class="overview-header" id="overview-header">
+      <div class="overview-header-left">
+        <div class="overview-badge">
+          <span class="status-dot dot-live"></span>
+          <span>Lead Intelligence Overview</span>
+        </div>
+        <h2 class="overview-title">Enterprise Prospecting Hub</h2>
+        <p class="overview-subtitle">Real-time local lead extractions, qualification scoring, and verified outreach pipeline.</p>
+      </div>
+      <div class="overview-header-actions">
+        <button type="button" id="btn-overview-refresh" class="btn btn-secondary btn-sm" title="Refresh overview metrics and recent jobs">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+          <span>Refresh</span>
+        </button>
+        <button type="button" id="btn-overview-new-scrape" class="btn btn-primary btn-sm">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          <span>Start New Scrape</span>
+        </button>
+      </div>
+    </header>
+
     <!-- Top Action Card: Scrape Controller -->
     <section class="card scrape-control-card scroll-reveal" aria-labelledby="heading-scrape-config">
       <div class="card-header">
@@ -780,7 +802,7 @@
       </div>
     </section>
 
-    <!-- Metrics Cards Grid (with Card Hover Animation & Scroll Reveal) -->
+    <!-- Metrics Cards Grid: Total Leads | Hot Leads | Active Jobs | Completed Jobs -->
     <section id="metrics-section" class="metrics-grid scroll-reveal">
       <div class="metric-card card card-hover">
         <div class="metric-icon icon-total">
@@ -789,6 +811,7 @@
         <div class="metric-info">
           <span class="metric-label">Total Leads</span>
           <strong id="metric-total" class="metric-number">0</strong>
+          <span id="metric-total-sub" class="metric-subtext">Across all jobs</span>
         </div>
       </div>
 
@@ -797,28 +820,126 @@
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>
         </div>
         <div class="metric-info">
-          <span class="metric-label">Hot Leads (🔥)</span>
+          <span class="metric-label">Hot Leads</span>
           <strong id="metric-hot" class="metric-number">0</strong>
+          <span id="metric-hot-sub" class="metric-subtext">Score ≥ 70 prospects</span>
         </div>
       </div>
 
       <div class="metric-card card card-hover">
-        <div class="metric-icon icon-email">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+        <div class="metric-icon icon-active-jobs">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
         </div>
         <div class="metric-info">
-          <span class="metric-label">With Email</span>
-          <strong id="metric-emails" class="metric-number">0</strong>
+          <span class="metric-label">Active Jobs</span>
+          <strong id="metric-active-jobs" class="metric-number">0</strong>
+          <span id="metric-active-jobs-sub" class="metric-subtext">Running extractions</span>
         </div>
       </div>
 
       <div class="metric-card card card-hover">
-        <div class="metric-icon icon-phone">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+        <div class="metric-icon icon-completed-jobs">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
         </div>
         <div class="metric-info">
-          <span class="metric-label">With Phone</span>
-          <strong id="metric-phones" class="metric-number">0</strong>
+          <span class="metric-label">Completed Jobs</span>
+          <strong id="metric-completed-jobs" class="metric-number">0</strong>
+          <span id="metric-completed-jobs-sub" class="metric-subtext">Archived runs</span>
+        </div>
+      </div>
+
+      <!-- Hidden fallbacks for existing tab counters if accessed by legacy hooks -->
+      <span id="metric-emails" class="is-hidden" aria-hidden="true">0</span>
+      <span id="metric-phones" class="is-hidden" aria-hidden="true">0</span>
+    </section>
+
+    <!-- Recent Activity Grid: Recent Jobs & Recent Qualified Leads -->
+    <section class="overview-recent-grid scroll-reveal" id="overview-recent-grid" aria-label="Recent Scraping Activity and Leads">
+      <!-- Recent Extraction Jobs Card -->
+      <div class="card recent-activity-card" id="recent-jobs-card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Recent Extraction Jobs</h3>
+            <p class="card-desc">Latest Google Maps searches and lead batches.</p>
+          </div>
+          <button type="button" id="btn-view-all-jobs" class="btn btn-ghost btn-sm" aria-label="View all archives">
+            <span>View All</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+        </div>
+
+        <div class="recent-card-body">
+          <!-- Loading State -->
+          <div id="recent-jobs-loading" class="state-loading is-hidden">
+            <div class="spinner-ring sm"></div>
+            <span>Loading recent jobs...</span>
+          </div>
+
+          <!-- Empty State -->
+          <div id="recent-jobs-empty" class="state-empty is-hidden">
+            <div class="empty-state-icon">⚡</div>
+            <h4>No Extraction Jobs Yet</h4>
+            <p>Launch your first targeted search above to generate qualified business leads.</p>
+          </div>
+
+          <!-- Error State with Retry -->
+          <div id="recent-jobs-error" class="state-error is-hidden">
+            <div class="error-icon">⚠️</div>
+            <div class="error-text">
+              <h4>Failed to load recent jobs</h4>
+              <p>Could not connect to the backend job server.</p>
+            </div>
+            <button type="button" id="btn-retry-recent-jobs" class="btn btn-secondary btn-sm">Retry</button>
+          </div>
+
+          <!-- Populated Jobs List -->
+          <div id="recent-jobs-list" class="recent-jobs-list">
+            <!-- Dynamic jobs rendered here -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Qualified Leads Card -->
+      <div class="card recent-activity-card" id="recent-leads-card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Recent Qualified Leads</h3>
+            <p class="card-desc">Top prospects from latest extraction with verified channels.</p>
+          </div>
+          <button type="button" id="btn-view-all-leads" class="btn btn-ghost btn-sm" aria-label="Jump to full leads table">
+            <span>Full Table</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+        </div>
+
+        <div class="recent-card-body">
+          <!-- Loading State -->
+          <div id="recent-leads-loading" class="state-loading is-hidden">
+            <div class="spinner-ring sm"></div>
+            <span>Loading recent leads...</span>
+          </div>
+
+          <!-- Empty State -->
+          <div id="recent-leads-empty" class="state-empty is-hidden">
+            <div class="empty-state-icon">📋</div>
+            <h4>No Leads in Current View</h4>
+            <p>Select a job from Recent Jobs or start a new extraction to view lead intelligence.</p>
+          </div>
+
+          <!-- Error State with Retry -->
+          <div id="recent-leads-error" class="state-error is-hidden">
+            <div class="error-icon">⚠️</div>
+            <div class="error-text">
+              <h4>Failed to load leads</h4>
+              <p>Unable to retrieve lead records from storage.</p>
+            </div>
+            <button type="button" id="btn-retry-recent-leads" class="btn btn-secondary btn-sm">Retry</button>
+          </div>
+
+          <!-- Populated Leads List -->
+          <div id="recent-leads-list" class="recent-leads-list">
+            <!-- Dynamic leads rendered here -->
+          </div>
         </div>
       </div>
     </section>
@@ -864,7 +985,7 @@
 
           <!-- Export Dropdown -->
           <div class="export-dropdown">
-            <button type="button" id="btn-export-dropdown" class="btn btn-secondary">
+            <button type="button" id="btn-export-dropdown" class="btn btn-secondary" aria-haspopup="menu" aria-expanded="false" aria-label="Export leads dropdown menu">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
               <span>Export Leads</span>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -887,6 +1008,48 @@
         </div>
       </div>
 
+      <!-- Advanced Filter Bar (Category, Location, Contact Availability, Quality Tier) -->
+      <div class="leads-filter-bar" id="leads-filter-bar" role="search" aria-label="Filter lead list">
+        <div class="filter-group">
+          <label for="filter-category" class="filter-label">Category:</label>
+          <select id="filter-category" class="filter-select" aria-label="Filter by business category">
+            <option value="all">All Categories</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label for="filter-location" class="filter-label">Location:</label>
+          <select id="filter-location" class="filter-select" aria-label="Filter by location or city">
+            <option value="all">All Locations</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label for="filter-contact-type" class="filter-label">Contacts:</label>
+          <select id="filter-contact-type" class="filter-select" aria-label="Filter by contact availability">
+            <option value="all">All Contacts</option>
+            <option value="phone">Has Phone 📞</option>
+            <option value="email">Has Email ✉️</option>
+            <option value="both">Has Both 📞+✉️</option>
+            <option value="website">Has Website 🌐</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label for="filter-tier-select" class="filter-label">Quality Tier:</label>
+          <select id="filter-tier-select" class="filter-select" aria-label="Filter by quality score tier">
+            <option value="all">All Tiers</option>
+            <option value="hot">HOT (Score ≥ 70) 🔥</option>
+            <option value="warm">WARM (Score 40–69) ⚡</option>
+            <option value="cold">COLD (Score &lt; 40) ❄️</option>
+          </select>
+        </div>
+
+        <button type="button" id="btn-reset-filters" class="btn btn-ghost btn-sm btn-reset-filters is-hidden" title="Clear all active filters and return to default view">
+          <span>✕ Reset Filters</span>
+        </button>
+      </div>
+
       <!-- Mobile Table Swipe Hint -->
       <div class="mobile-table-hint">⟷ Swipe table horizontally to view phone, emails, and ratings</div>
 
@@ -899,11 +1062,12 @@
           <thead>
             <tr>
               <th scope="col" class="th-check"><input type="checkbox" id="check-all-leads" aria-label="Select all leads" title="Select all leads"></th>
-              <th scope="col" class="th-score" data-sort="score">Score <span class="sort-arrow">↕</span></th>
-              <th scope="col" class="th-title" data-sort="title">Company / Business <span class="sort-arrow">↕</span></th>
+              <th scope="col" class="th-score" data-sort="score" tabindex="0" role="button" aria-label="Sort by score">Score <span class="sort-arrow" id="sort-arrow-score">↕</span></th>
+              <th scope="col" class="th-title" data-sort="title" tabindex="0" role="button" aria-label="Sort by company title">Company / Business <span class="sort-arrow" id="sort-arrow-title">↕</span></th>
               <th scope="col" class="th-contact">Direct Contact</th>
               <th scope="col" class="th-website">Website &amp; Domain</th>
-              <th scope="col" class="th-rating" data-sort="rating">Rating <span class="sort-arrow">↕</span></th>
+              <th scope="col" class="th-rating" data-sort="rating" tabindex="0" role="button" aria-label="Sort by rating">Rating <span class="sort-arrow" id="sort-arrow-rating">↕</span></th>
+              <th scope="col" class="th-reviews" data-sort="reviews" tabindex="0" role="button" aria-label="Sort by review count">Reviews <span class="sort-arrow" id="sort-arrow-reviews">↕</span></th>
               <th scope="col" class="th-address">Location</th>
               <th scope="col" class="th-actions">Actions</th>
             </tr>
@@ -911,7 +1075,7 @@
           <tbody id="leads-table-body">
             <!-- Rendered dynamically by app.js -->
             <tr class="empty-state-row">
-              <td colspan="8">
+              <td colspan="9">
                 <div class="empty-state">
                   <div class="empty-state-icon">🗺️</div>
                   <h3>No Leads Loaded Yet</h3>
@@ -927,12 +1091,23 @@
       <div id="leads-map-container" class="map-view-container is-hidden" aria-label="Geographic Lead Map"></div>
 
       <div class="table-footer">
-        <span id="table-showing-text" class="table-info">Showing 0 leads</span>
-        <div id="table-pagination" class="pagination-controls is-hidden">
-          <button type="button" id="btn-page-prev" class="btn btn-sm btn-ghost">Previous</button>
-          <span id="page-indicator">Page 1</span>
-          <button type="button" id="btn-page-next" class="btn btn-sm btn-ghost">Next</button>
+        <div class="table-footer-left">
+          <span id="table-showing-text" class="table-info">Showing 0 leads</span>
+          <div class="page-size-selector" id="page-size-selector">
+            <label for="select-page-size" class="page-size-label">Show:</label>
+            <select id="select-page-size" class="page-size-select" aria-label="Leads per page">
+              <option value="25" selected>25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="all">All</option>
+            </select>
+          </div>
         </div>
+        <nav id="table-pagination" class="pagination-controls is-hidden" aria-label="Table pagination">
+          <button type="button" id="btn-page-prev" class="btn btn-sm btn-ghost pagination-btn" aria-label="Previous page">← Prev</button>
+          <span id="page-indicator" class="page-indicator" aria-live="polite">Page 1 of 1</span>
+          <button type="button" id="btn-page-next" class="btn btn-sm btn-ghost pagination-btn" aria-label="Next page">Next →</button>
+        </nav>
       </div>
     </section>
   </main>
@@ -1036,6 +1211,24 @@
           </div>
         </div>
         <div id="dossier-score-reasons" class="dossier-reasons-list"></div>
+      </div>
+
+      <!-- Source & Geocoding Intelligence Metadata -->
+      <div class="dossier-card" id="dossier-source-card">
+        <h4 class="dossier-card-title">Source &amp; Geocoding Intelligence</h4>
+        <div class="dossier-detail-row">
+          <span class="detail-label">Source Engine:</span>
+          <span id="dossier-source" class="detail-val">Google Maps Intelligence</span>
+        </div>
+        <div class="dossier-detail-row">
+          <span class="detail-label">Coordinates:</span>
+          <span id="dossier-coords" class="detail-val">—</span>
+          <a id="dossier-maps-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-copy-mini" title="Open in Google Maps">📍 Maps</a>
+        </div>
+        <div class="dossier-detail-row">
+          <span class="detail-label">Extraction Batch:</span>
+          <span id="dossier-timestamp" class="detail-val">—</span>
+        </div>
       </div>
 
       <!-- Automated Cold Outreach Pitch Generator -->
@@ -1197,8 +1390,8 @@
         </div>
 
         <div class="form-group">
-          <label for="input-register-password" class="form-label">Password (min. 6 characters)</label>
-          <input type="password" id="input-register-password" class="form-input" placeholder="••••••••" required minlength="6" autocomplete="new-password">
+          <label for="input-register-password" class="form-label">Password (min. 8 characters)</label>
+          <input type="password" id="input-register-password" class="form-input" placeholder="•••••••• (at least 8 chars)" required minlength="8" autocomplete="new-password">
         </div>
 
         <div id="auth-register-feedback" class="status-alert is-hidden"></div>

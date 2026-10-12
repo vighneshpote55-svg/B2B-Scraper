@@ -18,6 +18,16 @@
   let elapsedTimer = null;
   let scrapeStartTime = 0;
 
+  // Pagination state
+  let currentPage = 1;
+  let pageSize = 25;
+
+  // Phase 3: Advanced Lead Filters
+  let filterCategory = '';
+  let filterLocation = '';
+  let filterContactType = 'all';
+  let filterTierSelect = 'all';
+
   // Additional feature state
   let selectedLeadIndices = new Set();
   let activeDossierLead = null;
@@ -26,6 +36,8 @@
   let leafletTileLayer = null;
   let mapMarkersLayer = null;
   let currentViewMode = 'table';
+  let cachedJobsList = [];
+  let isOverviewLoading = false;
 
   // ── Authentication & Security Helpers ─────────────────────────────────────
   function getAuthToken() {
@@ -91,6 +103,31 @@
   const metricHot = document.getElementById('metric-hot');
   const metricEmails = document.getElementById('metric-emails');
   const metricPhones = document.getElementById('metric-phones');
+  const metricActiveJobs = document.getElementById('metric-active-jobs');
+  const metricCompletedJobs = document.getElementById('metric-completed-jobs');
+  const metricTotalSub = document.getElementById('metric-total-sub');
+  const metricHotSub = document.getElementById('metric-hot-sub');
+  const metricActiveJobsSub = document.getElementById('metric-active-jobs-sub');
+  const metricCompletedJobsSub = document.getElementById('metric-completed-jobs-sub');
+
+  // Overview Elements
+  const overviewHeader = document.getElementById('overview-header');
+  const btnOverviewNewScrape = document.getElementById('btn-overview-new-scrape');
+  const btnOverviewRefresh = document.getElementById('btn-overview-refresh');
+  const recentJobsCard = document.getElementById('recent-jobs-card');
+  const recentJobsLoading = document.getElementById('recent-jobs-loading');
+  const recentJobsEmpty = document.getElementById('recent-jobs-empty');
+  const recentJobsError = document.getElementById('recent-jobs-error');
+  const btnRetryRecentJobs = document.getElementById('btn-retry-recent-jobs');
+  const recentJobsList = document.getElementById('recent-jobs-list');
+  const btnViewAllJobs = document.getElementById('btn-view-all-jobs');
+  const recentLeadsCard = document.getElementById('recent-leads-card');
+  const recentLeadsLoading = document.getElementById('recent-leads-loading');
+  const recentLeadsEmpty = document.getElementById('recent-leads-empty');
+  const recentLeadsError = document.getElementById('recent-leads-error');
+  const btnRetryRecentLeads = document.getElementById('btn-retry-recent-leads');
+  const recentLeadsList = document.getElementById('recent-leads-list');
+  const btnViewAllLeads = document.getElementById('btn-view-all-leads');
 
   // Table & Toolbar
   const leadsTableContainer = document.getElementById('leads-table-container');
@@ -106,6 +143,21 @@
   const checkAllLeads = document.getElementById('check-all-leads');
   const btnViewTable = document.getElementById('btn-view-table');
   const btnViewMap = document.getElementById('btn-view-map');
+
+  // Phase 3: Advanced Lead Filter Bar
+  const leadsFilterBar = document.getElementById('leads-filter-bar');
+  const filterCategorySelect = document.getElementById('filter-category');
+  const filterLocationSelect = document.getElementById('filter-location');
+  const filterContactTypeSelect = document.getElementById('filter-contact-type');
+  const filterTierSelectElem = document.getElementById('filter-tier-select');
+  const btnResetFilters = document.getElementById('btn-reset-filters');
+
+  // Pagination Elements
+  const tablePagination = document.getElementById('table-pagination');
+  const btnPagePrev = document.getElementById('btn-page-prev');
+  const btnPageNext = document.getElementById('btn-page-next');
+  const pageIndicator = document.getElementById('page-indicator');
+  const selectPageSize = document.getElementById('select-page-size');
 
   // Export
   const btnExportDropdown = document.getElementById('btn-export-dropdown');
@@ -138,6 +190,9 @@
   const dossierReviews = document.getElementById('dossier-reviews');
   const dossierScoreNum = document.getElementById('dossier-score-num');
   const dossierScoreReasons = document.getElementById('dossier-score-reasons');
+  const dossierCoords = document.getElementById('dossier-coords');
+  const dossierMapsLink = document.getElementById('dossier-maps-link');
+  const dossierTimestamp = document.getElementById('dossier-timestamp');
   const outreachPitchText = document.getElementById('outreach-pitch-text');
   const btnCopyPitch = document.getElementById('btn-copy-pitch');
   const btnSendPitchWa = document.getElementById('btn-send-pitch-wa');
@@ -475,6 +530,7 @@
     setupMapView();
     setupSupabaseIntegration();
     setupAuthIntegration();
+    setupOverviewEvents();
 
     // Run entrance choreography
     animatePageEntrance();
@@ -774,12 +830,14 @@
           }, 3500);
 
           loadJobLeads(jobId);
+          loadOverviewData(false);
           showToast(`Done! Extracted ${job.leads ? job.leads.length : 0} leads.`, 'success');
 
         } else if (job.status === 'failed') {
           clearInterval(pollTimer);
           clearInterval(elapsedTimer);
           stopScrapingState();
+          loadOverviewData(false);
           showToast(job.error || 'Job failed. Google may be temporarily throttling.', 'error');
           progressStageTitle.textContent = 'Job Failed';
           progressSubtext.textContent = job.error || 'Check Docker scraper logs.';
@@ -795,11 +853,299 @@
     btnSubmitScrape.disabled = false;
     btnSubmitText.textContent = 'Launch Extraction';
     clearInterval(elapsedTimer);
+    loadOverviewData(false);
+  }
+
+  // ── Phase 2: Overview UX Controller & Helpers ─────────────────────────────
+  function formatReadableDate(ts) {
+    if (!ts) return 'Unknown date';
+    let dateObj = null;
+    if (typeof ts === 'number') {
+      dateObj = new Date(ts < 1e11 ? ts * 1000 : ts);
+    } else if (typeof ts === 'string') {
+      const num = Number(ts);
+      if (!isNaN(num) && num > 0) {
+        dateObj = new Date(num < 1e11 ? num * 1000 : num);
+      } else {
+        dateObj = new Date(ts);
+      }
+    }
+    if (!dateObj || isNaN(dateObj.getTime())) return 'Recently';
+
+    const now = new Date();
+    const diffSec = Math.floor((now.getTime() - dateObj.getTime()) / 1000);
+    if (diffSec < 60 && diffSec >= 0) return 'Just now';
+    if (diffSec < 3600 && diffSec >= 60) return `${Math.floor(diffSec / 60)}m ago`;
+
+    return dateObj.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+
+  function renderOverviewKPIs(jobs = [], activeCount = null) {
+    let totalLeads = 0;
+    let hotLeads = 0;
+    let completedCount = 0;
+    let workingCount = 0;
+
+    for (const j of jobs) {
+      if (j.metrics) {
+        totalLeads += Number(j.metrics.total) || 0;
+        hotLeads += Number(j.metrics.hot) || 0;
+      }
+      const st = (j.status || '').toLowerCase();
+      if (st === 'ok' || st === 'completed') {
+        completedCount++;
+      } else if (st === 'working' || st === 'running') {
+        workingCount++;
+      }
+    }
+
+    const finalActive = typeof activeCount === 'number' ? activeCount : workingCount;
+
+    if (metricTotal) animateCounter(metricTotal, totalLeads);
+    if (metricHot) animateCounter(metricHot, hotLeads);
+    if (metricActiveJobs) animateCounter(metricActiveJobs, finalActive);
+    if (metricCompletedJobs) animateCounter(metricCompletedJobs, completedCount);
+
+    if (metricTotalSub) {
+      metricTotalSub.textContent = jobs.length > 0 ? `Across all ${jobs.length} jobs` : 'No jobs recorded';
+    }
+    if (metricHotSub) {
+      metricHotSub.textContent = 'Score ≥ 70 prospects';
+    }
+    if (metricActiveJobsSub) {
+      metricActiveJobsSub.textContent = finalActive > 0 ? `${finalActive} running` : 'Idle';
+    }
+    if (metricCompletedJobsSub) {
+      metricCompletedJobsSub.textContent = `${completedCount} archived`;
+    }
+  }
+
+  function renderRecentJobs(jobs = []) {
+    if (!recentJobsList) return;
+    if (recentJobsLoading) recentJobsLoading.classList.add('is-hidden');
+    if (recentJobsError) recentJobsError.classList.add('is-hidden');
+
+    if (!jobs || jobs.length === 0) {
+      if (recentJobsEmpty) recentJobsEmpty.classList.remove('is-hidden');
+      recentJobsList.innerHTML = '';
+      return;
+    }
+
+    if (recentJobsEmpty) recentJobsEmpty.classList.add('is-hidden');
+    const displayJobs = jobs.slice(0, 5);
+
+    recentJobsList.innerHTML = displayJobs.map((j) => {
+      const title = j.keyword ? `${j.keyword}` : `Job ${String(j.id).substring(0, 8)}`;
+      const location = j.city || 'Any location';
+      const totalLeads = j.metrics ? (j.metrics.total || 0) : 0;
+      const hotLeads = j.metrics ? (j.metrics.hot || 0) : 0;
+      const dateStr = formatReadableDate(j.started_at);
+
+      let badgeClass = 'badge-status-completed';
+      let badgeText = 'Completed';
+      const st = (j.status || '').toLowerCase();
+      if (st === 'working' || st === 'running') {
+        badgeClass = 'badge-status-working';
+        badgeText = 'Extracting...';
+      } else if (st === 'error' || st === 'failed') {
+        badgeClass = 'badge-status-failed';
+        badgeText = 'Failed';
+      } else if (st === 'cancelled') {
+        badgeClass = 'badge-status-cancelled';
+        badgeText = 'Cancelled';
+      }
+
+      return `
+        <div class="recent-job-item" data-job-id="${escapeHtml(j.id)}" role="button" tabindex="0" title="Load leads from this extraction">
+          <div class="recent-job-info">
+            <div class="recent-job-title">${escapeHtml(title)}</div>
+            <div class="recent-job-meta">
+              <span>📍 ${escapeHtml(location)}</span>
+              <span>•</span>
+              <span>🕒 ${escapeHtml(dateStr)}</span>
+            </div>
+          </div>
+          <div class="recent-job-actions">
+            <span class="${badgeClass}">${escapeHtml(badgeText)}</span>
+            <span class="badge-value" style="font-size: 0.76rem;">${totalLeads} leads ${hotLeads > 0 ? `(${hotLeads} 🔥)` : ''}</span>
+            <button type="button" class="btn btn-sm btn-ghost btn-load-job" data-job-id="${escapeHtml(j.id)}" aria-label="View leads from ${escapeHtml(title)}">
+              View
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    recentJobsList.querySelectorAll('.recent-job-item').forEach((el) => {
+      el.addEventListener('click', () => {
+        const jid = el.dataset.jobId;
+        if (jid) {
+          loadJobLeads(jid);
+          leadsTableContainer?.scrollIntoView({ behavior: 'smooth' });
+          showToast('Loaded scrape dataset!', 'info');
+        }
+      });
+    });
+  }
+
+  function renderRecentLeads(leads = []) {
+    if (!recentLeadsList) return;
+    if (recentLeadsLoading) recentLeadsLoading.classList.add('is-hidden');
+    if (recentLeadsError) recentLeadsError.classList.add('is-hidden');
+
+    if (!leads || leads.length === 0) {
+      if (recentLeadsEmpty) recentLeadsEmpty.classList.remove('is-hidden');
+      recentLeadsList.innerHTML = '';
+      return;
+    }
+
+    if (recentLeadsEmpty) recentLeadsEmpty.classList.add('is-hidden');
+    const topLeads = [...leads]
+      .sort((a, b) => (Number(b.lead_score) || 0) - (Number(a.lead_score) || 0))
+      .slice(0, 5);
+
+    recentLeadsList.innerHTML = topLeads.map((lead, idx) => {
+      const name = lead.title || lead.name || 'Unnamed Business';
+      const city = lead.city || lead.address || 'Local listing';
+      const score = Number(lead.lead_score) || 0;
+      const tier = lead.lead_tier || (score >= 70 ? 'HOT' : score >= 40 ? 'WARM' : 'COLD');
+      const hasPhone = Boolean(lead.clean_phone || lead.phone);
+      const hasEmail = Boolean(lead.emails && lead.emails.length > 0);
+      const hasWeb = Boolean(lead.website);
+
+      const tierBadgeClass = tier === 'HOT' ? 'tier-hot' : tier === 'WARM' ? 'tier-warm' : 'tier-cold';
+
+      return `
+        <div class="recent-lead-item" data-lead-idx="${idx}" role="button" tabindex="0" title="Inspect business dossier">
+          <div class="recent-lead-info">
+            <div class="recent-lead-name">${escapeHtml(name)}</div>
+            <div class="recent-lead-sub">📍 ${escapeHtml(city)}</div>
+          </div>
+          <div class="recent-lead-actions">
+            <div class="contact-indicators-group" title="Contact Availability">
+              <span class="contact-indicator ${hasPhone ? 'has-phone' : 'is-missing'}" title="${hasPhone ? 'Verified Phone' : 'No phone'}">📞</span>
+              <span class="contact-indicator ${hasEmail ? 'has-email' : 'is-missing'}" title="${hasEmail ? 'Direct Email' : 'No email'}">✉️</span>
+              <span class="contact-indicator ${hasWeb ? 'has-web' : 'is-missing'}" title="${hasWeb ? 'Website Available' : 'No website'}">🌐</span>
+            </div>
+            <span class="tier-badge ${tierBadgeClass}" style="font-size: 0.72rem; padding: 0.2rem 0.5rem;">${escapeHtml(tier)} ${score}</span>
+            <button type="button" class="btn btn-sm btn-ghost btn-inspect-recent" data-lead-idx="${idx}" aria-label="Open dossier for ${escapeHtml(name)}">
+              Intel
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    recentLeadsList.querySelectorAll('.recent-lead-item').forEach((el) => {
+      el.addEventListener('click', () => {
+        const idx = Number(el.dataset.leadIdx);
+        if (topLeads[idx]) {
+          openDossier(topLeads[idx]);
+        }
+      });
+    });
+  }
+
+  async function loadOverviewData(forceRefresh = false) {
+    if (isOverviewLoading) return;
+    isOverviewLoading = true;
+
+    if (forceRefresh) {
+      if (recentJobsLoading) recentJobsLoading.classList.remove('is-hidden');
+      if (recentJobsEmpty) recentJobsEmpty.classList.add('is-hidden');
+      if (recentJobsError) recentJobsError.classList.add('is-hidden');
+    }
+
+    try {
+      const [jobsRes, statusRes] = await Promise.all([
+        authFetch('/api/jobs'),
+        authFetch('/api/status')
+      ]);
+
+      let jobs = [];
+      if (jobsRes.ok) {
+        const data = await jobsRes.json();
+        jobs = data.jobs || [];
+        cachedJobsList = jobs;
+      } else {
+        if (recentJobsError) recentJobsError.classList.remove('is-hidden');
+        if (recentJobsLoading) recentJobsLoading.classList.add('is-hidden');
+      }
+
+      let activeCount = 0;
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        activeCount = statusData.active_jobs_count || 0;
+      }
+
+      renderOverviewKPIs(jobs, activeCount);
+      renderRecentJobs(jobs);
+
+      if (forceRefresh) {
+        showToast('Dashboard overview refreshed!', 'success');
+      }
+    } catch (err) {
+      console.error('Failed to load overview data:', err);
+      if (recentJobsError) recentJobsError.classList.remove('is-hidden');
+      if (recentJobsLoading) recentJobsLoading.classList.add('is-hidden');
+    } finally {
+      isOverviewLoading = false;
+      if (recentJobsLoading) recentJobsLoading.classList.add('is-hidden');
+    }
+  }
+
+  function setupOverviewEvents() {
+    if (btnOverviewNewScrape) {
+      btnOverviewNewScrape.addEventListener('click', () => {
+        inputKeyword?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        inputKeyword?.focus();
+      });
+    }
+
+    if (btnOverviewRefresh) {
+      btnOverviewRefresh.addEventListener('click', () => {
+        loadOverviewData(true);
+      });
+    }
+
+    if (btnRetryRecentJobs) {
+      btnRetryRecentJobs.addEventListener('click', () => {
+        loadOverviewData(true);
+      });
+    }
+
+    if (btnRetryRecentLeads) {
+      btnRetryRecentLeads.addEventListener('click', () => {
+        if (currentJobId) {
+          loadJobLeads(currentJobId);
+        } else {
+          loadOverviewData(true);
+        }
+      });
+    }
+
+    if (btnViewAllJobs) {
+      btnViewAllJobs.addEventListener('click', () => {
+        openHistoryDrawer();
+      });
+    }
+
+    if (btnViewAllLeads) {
+      btnViewAllLeads.addEventListener('click', () => {
+        leadsTableContainer?.scrollIntoView({ behavior: 'smooth' });
+      });
+    }
   }
 
   // ── Auto-load Most Recent Job on Startup ───────────────────────────────────
   async function loadInitialJobIfAvailable() {
     try {
+      await loadOverviewData(false);
       const res = await authFetch('/api/jobs');
       if (!res.ok) return;
       const data = await res.json();
@@ -817,6 +1163,59 @@
     }
   }
 
+  // ── Phase 3: Location and Dynamic Filter Extraction ─────────────────────────
+  function getLeadLocation(lead) {
+    if (!lead) return '';
+    if (lead.city && typeof lead.city === 'string' && lead.city.trim()) {
+      return lead.city.trim();
+    }
+    if (lead.location && typeof lead.location === 'string' && lead.location.trim()) {
+      return lead.location.trim();
+    }
+    if (lead.address && typeof lead.address === 'string' && lead.address.trim()) {
+      const parts = lead.address.split(',').map((s) => s.trim()).filter(Boolean);
+      if (parts.length >= 2) {
+        return parts[parts.length - 2];
+      }
+      return parts[0] || '';
+    }
+    return '';
+  }
+
+  function populateFilterDropdowns(leads) {
+    if (!filterCategorySelect || !filterLocationSelect) return;
+
+    // Distinct Categories
+    const categories = Array.from(new Set(
+      leads.map((l) => (l.category || '').trim()).filter(Boolean)
+    )).sort((a, b) => a.localeCompare(b));
+
+    const prevCategory = filterCategory;
+    filterCategorySelect.innerHTML = '<option value="">All Categories</option>' +
+      categories.map((cat) => `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`).join('');
+    if (categories.includes(prevCategory)) {
+      filterCategorySelect.value = prevCategory;
+    } else {
+      filterCategory = '';
+      filterCategorySelect.value = '';
+    }
+
+    // Distinct Locations / Cities
+    const locations = Array.from(new Set(
+      leads.map((l) => getLeadLocation(l)).filter(Boolean)
+    )).sort((a, b) => a.localeCompare(b));
+
+    const prevLocation = filterLocation;
+    filterLocationSelect.innerHTML = '<option value="">All Locations</option>' +
+      locations.map((loc) => `<option value="${escapeHtml(loc)}">${escapeHtml(loc)}</option>`).join('');
+    if (locations.includes(prevLocation)) {
+      filterLocationSelect.value = prevLocation;
+    } else {
+      filterLocation = '';
+      filterLocationSelect.value = '';
+    }
+  }
+
   // Load leads from API
   async function loadJobLeads(jobId) {
     try {
@@ -824,6 +1223,8 @@
       const data = await res.json();
       allLeads = data.leads || [];
       currentJobId = jobId;
+      currentPage = 1;
+      populateFilterDropdowns(allLeads);
 
       // Check status to display incremental deduplication notice
       try {
@@ -851,6 +1252,7 @@
 
       updateMetrics();
       renderTable();
+      renderRecentLeads(allLeads);
     } catch (err) {
       console.error('Error loading leads:', err);
     }
@@ -864,10 +1266,15 @@
     const withEmail = allLeads.filter((l) => Boolean(l.emails)).length;
     const withPhone = allLeads.filter((l) => Boolean(l.clean_phone || l.phone)).length;
 
-    animateCounter(metricTotal, total);
-    animateCounter(metricHot, hot);
-    animateCounter(metricEmails, withEmail);
-    animateCounter(metricPhones, withPhone);
+    if (!cachedJobsList || cachedJobsList.length <= 1) {
+      animateCounter(metricTotal, total);
+      animateCounter(metricHot, hot);
+      if (metricTotalSub) metricTotalSub.textContent = 'Active dataset';
+      if (metricHotSub) metricHotSub.textContent = 'Score ≥ 70 prospects';
+    }
+
+    if (metricEmails) animateCounter(metricEmails, withEmail);
+    if (metricPhones) animateCounter(metricPhones, withPhone);
 
     tabCountAll.textContent = total;
     tabCountHot.textContent = hot;
@@ -1051,6 +1458,47 @@ Lead Partnerships Team`;
       dossierScoreReasons.innerHTML = reasons.map((r) => `<span class="reason-chip">✔ ${escapeHtml(r)}</span>`).join('');
     } else {
       dossierScoreReasons.innerHTML = '<span class="reason-chip" style="color:var(--text-muted);background:transparent;">Base lead entry</span>';
+    }
+
+    // Phase 3: Source, Geocoding & Timestamp Metadata
+    const lat = lead.latitude !== undefined && lead.latitude !== null ? lead.latitude : lead.lat;
+    const lng = lead.longitude !== undefined && lead.longitude !== null ? lead.longitude : lead.lng;
+    if (dossierCoords) {
+      if (lat !== undefined && lat !== null && lng !== undefined && lng !== null && lat !== '' && lng !== '') {
+        dossierCoords.textContent = `${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`;
+      } else if (lead.address) {
+        dossierCoords.textContent = 'Approximate (Geocoded from address)';
+      } else {
+        dossierCoords.textContent = 'Not recorded';
+      }
+    }
+
+    if (dossierMapsLink) {
+      if (lat !== undefined && lat !== null && lng !== undefined && lng !== null && lat !== '' && lng !== '') {
+        dossierMapsLink.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(lat + ',' + lng)}`;
+        dossierMapsLink.style.display = 'inline-flex';
+      } else if (lead.address) {
+        dossierMapsLink.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(lead.address)}`;
+        dossierMapsLink.style.display = 'inline-flex';
+      } else {
+        dossierMapsLink.style.display = 'none';
+      }
+    }
+
+    if (dossierTimestamp) {
+      const rawTs = lead.created_at || lead.scraped_at || lead.timestamp;
+      if (rawTs) {
+        try {
+          const d = new Date(rawTs);
+          dossierTimestamp.textContent = isNaN(d.getTime()) ? String(rawTs) : d.toLocaleString();
+        } catch (e) {
+          dossierTimestamp.textContent = String(rawTs);
+        }
+      } else if (currentJobId) {
+        dossierTimestamp.textContent = `Batch Job ${currentJobId.slice(0, 8)}`;
+      } else {
+        dossierTimestamp.textContent = 'Current Batch Extraction';
+      }
     }
 
     // Generate outreach pitch
@@ -1322,7 +1770,11 @@ Lead Partnerships Team`;
     const rows = leads.map((l) => {
       return fields.map((f) => {
         let val = l[f] === undefined || l[f] === null ? '' : String(l[f]);
-        if (val.includes('"') || val.includes(',') || val.includes('\n')) {
+        // CSV Formula Injection Prevention: neutralize '=', '+', '-', '@', tab or carriage return
+        if (/^[=+\-@\t\r]/.test(val)) {
+          val = `'` + val;
+        }
+        if (val.includes('"') || val.includes(',') || val.includes('\n') || val.includes('\r')) {
           val = `"${val.replace(/"/g, '""')}"`;
         }
         return val;
@@ -1342,6 +1794,8 @@ Lead Partnerships Team`;
   }
 
   // ── Leaflet Interactive Map View ───────────────────────────────────────────
+  let mapResizeObserver = null;
+
   function setupMapView() {
     if (btnViewTable && btnViewMap) {
       btnViewTable.addEventListener('click', () => {
@@ -1361,6 +1815,9 @@ Lead Partnerships Team`;
         leadsTableContainer.classList.add('is-hidden');
         leadsMapContainer.classList.remove('is-hidden');
         initOrUpdateMap();
+        if (leafletMap) {
+          requestAnimationFrame(() => leafletMap.invalidateSize());
+        }
       });
     }
   }
@@ -1385,13 +1842,23 @@ Lead Partnerships Team`;
       }).addTo(leafletMap);
 
       mapMarkersLayer = window.L.layerGroup().addTo(leafletMap);
+
+      // Attach ResizeObserver to keep tiles aligned on layout shifts
+      if (typeof window.ResizeObserver !== 'undefined' && leadsMapContainer) {
+        mapResizeObserver = new ResizeObserver(() => {
+          if (leafletMap && currentViewMode === 'map') {
+            leafletMap.invalidateSize();
+          }
+        });
+        mapResizeObserver.observe(leadsMapContainer);
+      }
     } else if (leafletTileLayer) {
       leafletTileLayer.setUrl(tileUrl);
     }
 
     setTimeout(() => {
       if (leafletMap) leafletMap.invalidateSize();
-    }, 120);
+    }, 80);
 
     if (!mapMarkersLayer) return;
     mapMarkersLayer.clearLayers();
@@ -1474,29 +1941,72 @@ Lead Partnerships Team`;
 
     // Filter by tab
     if (activeFilter === 'hot') {
-      filtered = filtered.filter((l) => l.lead_tier === 'HOT');
+      filtered = filtered.filter((l) => l.lead_tier === 'HOT' || Number(l.lead_score || 0) >= 70);
     } else if (activeFilter === 'warm') {
-      filtered = filtered.filter((l) => l.lead_tier === 'WARM');
+      filtered = filtered.filter((l) => l.lead_tier === 'WARM' || (Number(l.lead_score || 0) >= 40 && Number(l.lead_score || 0) < 70));
     } else if (activeFilter === 'has_email') {
       filtered = filtered.filter((l) => Boolean(l.emails));
     }
 
-    // Filter by search query
+    // Phase 3: Filter by Category
+    if (filterCategory) {
+      filtered = filtered.filter((l) => (l.category || '').toLowerCase() === filterCategory.toLowerCase());
+    }
+
+    // Phase 3: Filter by Location
+    if (filterLocation) {
+      const targetLoc = filterLocation.toLowerCase();
+      filtered = filtered.filter((l) => {
+        const leadLoc = getLeadLocation(l).toLowerCase();
+        const address = (l.address || '').toLowerCase();
+        return leadLoc === targetLoc || address.includes(targetLoc);
+      });
+    }
+
+    // Phase 3: Filter by Contact Availability
+    if (filterContactType === 'has_phone') {
+      filtered = filtered.filter((l) => Boolean(l.clean_phone || l.phone));
+    } else if (filterContactType === 'has_email') {
+      filtered = filtered.filter((l) => Boolean(l.emails));
+    } else if (filterContactType === 'has_both') {
+      filtered = filtered.filter((l) => Boolean(l.clean_phone || l.phone) && Boolean(l.emails));
+    } else if (filterContactType === 'has_website') {
+      filtered = filtered.filter((l) => Boolean(l.website));
+    }
+
+    // Phase 3: Filter by Tier Select
+    if (filterTierSelect === 'HOT') {
+      filtered = filtered.filter((l) => l.lead_tier === 'HOT' || Number(l.lead_score || 0) >= 70);
+    } else if (filterTierSelect === 'WARM') {
+      filtered = filtered.filter((l) => l.lead_tier === 'WARM' || (Number(l.lead_score || 0) >= 40 && Number(l.lead_score || 0) < 70));
+    } else if (filterTierSelect === 'COLD') {
+      filtered = filtered.filter((l) => l.lead_tier === 'COLD' || Number(l.lead_score || 0) < 40);
+    }
+
+    // Phase 3: Multi-field Search Query
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter((l) => {
+        const title = (l.title || '').toLowerCase();
+        const emails = (l.emails || '').toLowerCase();
+        const phone = (l.clean_phone || l.phone || '').toLowerCase();
+        const website = (l.website || '').toLowerCase();
+        const category = (l.category || '').toLowerCase();
+        const address = (l.address || '').toLowerCase();
+        const city = (l.city || l.location || getLeadLocation(l)).toLowerCase();
         return (
-          (l.title && l.title.toLowerCase().includes(q)) ||
-          (l.emails && l.emails.toLowerCase().includes(q)) ||
-          (l.phone && l.phone.toLowerCase().includes(q)) ||
-          (l.website && l.website.toLowerCase().includes(q)) ||
-          (l.category && l.category.toLowerCase().includes(q)) ||
-          (l.address && l.address.toLowerCase().includes(q))
+          title.includes(q) ||
+          emails.includes(q) ||
+          phone.includes(q) ||
+          website.includes(q) ||
+          category.includes(q) ||
+          address.includes(q) ||
+          city.includes(q)
         );
       });
     }
 
-    // Sort
+    // Phase 3: Sort (including reviews column)
     filtered.sort((a, b) => {
       let valA = a[sortField];
       let valB = b[sortField];
@@ -1507,6 +2017,9 @@ Lead Partnerships Team`;
       } else if (sortField === 'rating') {
         valA = Number(a.review_rating || 0);
         valB = Number(b.review_rating || 0);
+      } else if (sortField === 'reviews') {
+        valA = Number(a.review_count || 0);
+        valB = Number(b.review_count || 0);
       } else if (sortField === 'title') {
         valA = (a.title || '').toLowerCase();
         valB = (b.title || '').toLowerCase();
@@ -1517,9 +2030,67 @@ Lead Partnerships Team`;
       return 0;
     });
 
-    tableShowingText.textContent = `Showing ${filtered.length} of ${allLeads.length} leads`;
+    // Update active sort indicator on table headers
+    document.querySelectorAll('.data-table th[data-sort]').forEach((th) => {
+      const field = th.dataset.sort;
+      if (field === sortField) {
+        th.classList.add('th-sort-active');
+        const arrow = th.querySelector('.sort-arrow');
+        if (arrow) arrow.textContent = sortAsc ? '▲' : '▼';
+      } else {
+        th.classList.remove('th-sort-active');
+        const arrow = th.querySelector('.sort-arrow');
+        if (arrow) arrow.textContent = '⇅';
+      }
+    });
+
+    // Toggle Reset Filters button
+    const hasActiveFilters = Boolean(
+      searchQuery ||
+      filterCategory ||
+      filterLocation ||
+      filterContactType !== 'all' ||
+      filterTierSelect !== 'all' ||
+      activeFilter !== 'all'
+    );
+    if (btnResetFilters) {
+      if (hasActiveFilters) {
+        btnResetFilters.classList.remove('is-hidden');
+      } else {
+        btnResetFilters.classList.add('is-hidden');
+      }
+    }
+
+    const totalFiltered = filtered.length;
+    const effectivePageSize = pageSize === Infinity ? totalFiltered : pageSize;
+    const totalPages = pageSize === Infinity ? 1 : Math.max(1, Math.ceil(totalFiltered / effectivePageSize));
+
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+
+    const startIdx = pageSize === Infinity ? 0 : (currentPage - 1) * effectivePageSize;
+    const endIdx = pageSize === Infinity ? totalFiltered : Math.min(startIdx + effectivePageSize, totalFiltered);
+    const pagedLeads = filtered.slice(startIdx, endIdx);
+
+    if (totalFiltered > 0 && totalFiltered > effectivePageSize) {
+      tableShowingText.textContent = `Showing ${startIdx + 1}–${endIdx} of ${totalFiltered} leads (${allLeads.length} total)`;
+    } else {
+      tableShowingText.textContent = `Showing ${totalFiltered} of ${allLeads.length} leads`;
+    }
+
+    if (tablePagination) {
+      if (totalPages > 1 && totalFiltered > 0) {
+        tablePagination.classList.remove('is-hidden');
+        if (pageIndicator) pageIndicator.textContent = `Page ${currentPage} of ${totalPages}`;
+        if (btnPagePrev) btnPagePrev.disabled = (currentPage <= 1);
+        if (btnPageNext) btnPageNext.disabled = (currentPage >= totalPages);
+      } else {
+        tablePagination.classList.add('is-hidden');
+      }
+    }
 
     if (filtered.length === 0) {
+      if (tablePagination) tablePagination.classList.add('is-hidden');
       if (allLeads.length === 0) {
         leadsTableBody.innerHTML = `
           <tr class="empty-state-row">
@@ -1546,7 +2117,7 @@ Lead Partnerships Team`;
       return;
     }
 
-    leadsTableBody.innerHTML = filtered.map((lead) => {
+    leadsTableBody.innerHTML = pagedLeads.map((lead) => {
       const idx = allLeads.indexOf(lead);
       const tier = lead.lead_tier || 'COLD';
       const score = lead.lead_score || 0;
@@ -1739,7 +2310,7 @@ Lead Partnerships Team`;
     }
   }
 
-  // Setup table filter tabs, search, and sorting
+  // Setup table filter tabs, search, sorting, and pagination
   function setupTableEvents() {
     filterTabs.forEach((tab) => {
       tab.addEventListener('click', () => {
@@ -1747,13 +2318,79 @@ Lead Partnerships Team`;
         filterTabs.forEach((t) => t.classList.remove('active'));
         tab.classList.add('active');
         activeFilter = tab.dataset.filter || 'all';
+        currentPage = 1;
         renderTable();
       });
     });
 
+    // Phase 3: Filter Dropdowns and Reset Button
+    if (filterCategorySelect) {
+      filterCategorySelect.addEventListener('change', (e) => {
+        filterCategory = e.target.value.trim();
+        currentPage = 1;
+        renderTable();
+      });
+    }
+
+    if (filterLocationSelect) {
+      filterLocationSelect.addEventListener('change', (e) => {
+        filterLocation = e.target.value.trim();
+        currentPage = 1;
+        renderTable();
+      });
+    }
+
+    if (filterContactTypeSelect) {
+      filterContactTypeSelect.addEventListener('change', (e) => {
+        filterContactType = e.target.value;
+        currentPage = 1;
+        renderTable();
+      });
+    }
+
+    if (filterTierSelectElem) {
+      filterTierSelectElem.addEventListener('change', (e) => {
+        filterTierSelect = e.target.value;
+        currentPage = 1;
+        renderTable();
+      });
+    }
+
+    if (btnResetFilters) {
+      btnResetFilters.addEventListener('click', () => {
+        addMicroBounce(btnResetFilters);
+        searchQuery = '';
+        if (inputTableSearch) inputTableSearch.value = '';
+        filterCategory = '';
+        if (filterCategorySelect) filterCategorySelect.value = '';
+        filterLocation = '';
+        if (filterLocationSelect) filterLocationSelect.value = '';
+        filterContactType = 'all';
+        if (filterContactTypeSelect) filterContactTypeSelect.value = 'all';
+        filterTierSelect = 'all';
+        if (filterTierSelectElem) filterTierSelectElem.value = 'all';
+        activeFilter = 'all';
+        filterTabs.forEach((t) => {
+          if (t.dataset.filter === 'all') {
+            t.classList.add('active');
+          } else {
+            t.classList.remove('active');
+          }
+        });
+        currentPage = 1;
+        renderTable();
+        showToast('All filters reset.', 'info');
+      });
+    }
+
+    let searchDebounceTimer = null;
     inputTableSearch.addEventListener('input', (e) => {
-      searchQuery = e.target.value.trim();
-      renderTable();
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(() => {
+        searchQuery = e.target.value.trim();
+        currentPage = 1;
+        renderTable();
+      }, 180);
     });
 
     document.querySelectorAll('.data-table th[data-sort]').forEach((th) => {
@@ -1766,9 +2403,44 @@ Lead Partnerships Team`;
           sortField = field;
           sortAsc = false;
         }
+        currentPage = 1;
         renderTable();
       });
     });
+
+    // Pagination controls
+    if (btnPagePrev) {
+      btnPagePrev.addEventListener('click', () => {
+        if (currentPage > 1) {
+          addMicroBounce(btnPagePrev);
+          currentPage--;
+          renderTable();
+          if (leadsTableContainer) {
+            leadsTableContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }
+      });
+    }
+
+    if (btnPageNext) {
+      btnPageNext.addEventListener('click', () => {
+        addMicroBounce(btnPageNext);
+        currentPage++;
+        renderTable();
+        if (leadsTableContainer) {
+          leadsTableContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      });
+    }
+
+    if (selectPageSize) {
+      selectPageSize.addEventListener('change', (e) => {
+        const val = e.target.value;
+        pageSize = val === 'all' ? Infinity : (parseInt(val, 10) || 25);
+        currentPage = 1;
+        renderTable();
+      });
+    }
   }
 
   // ── Setup Export Menu ──────────────────────────────────────────────────────
