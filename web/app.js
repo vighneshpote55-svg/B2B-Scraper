@@ -2624,6 +2624,14 @@ CREATE POLICY "Strict service role only on users" ON public.users FOR ALL TO ser
     if (gateTabLogin) gateTabLogin.addEventListener('click', () => switchGateTab('login'));
     if (gateTabRegister) gateTabRegister.addEventListener('click', () => switchGateTab('register'));
 
+    if (btnToggleAuthMode) {
+      btnToggleAuthMode.addEventListener('click', (e) => {
+        e.preventDefault();
+        const isLoginVisible = !gateFormLogin.classList.contains('is-hidden');
+        switchGateTab(isLoginVisible ? 'register' : 'login');
+      });
+    }
+
     if (linkForgotPass) {
       linkForgotPass.addEventListener('click', (e) => {
         e.preventDefault();
@@ -2923,6 +2931,98 @@ CREATE POLICY "Strict service role only on users" ON public.users FOR ALL TO ser
     if (btnCloseAuthModal && modalAuth) {
       btnCloseAuthModal.addEventListener('click', () => {
         modalAuth.classList.add('is-hidden');
+      });
+    }
+
+    // Modal Tabs & Registration Form Controls
+    const tabAuthLogin = document.getElementById('tab-auth-login');
+    const tabAuthRegister = document.getElementById('tab-auth-register');
+    const formAuthLogin = document.getElementById('form-auth-login');
+    const formAuthRegister = document.getElementById('form-auth-register');
+    const authRegisterFeedback = document.getElementById('auth-register-feedback');
+    const btnSubmitRegister = document.getElementById('btn-submit-register');
+
+    if (tabAuthLogin && tabAuthRegister) {
+      tabAuthLogin.addEventListener('click', () => {
+        tabAuthLogin.classList.add('is-active');
+        tabAuthRegister.classList.remove('is-active');
+        if (formAuthLogin) formAuthLogin.classList.remove('is-hidden');
+        if (formAuthRegister) formAuthRegister.classList.add('is-hidden');
+      });
+      tabAuthRegister.addEventListener('click', () => {
+        tabAuthRegister.classList.add('is-active');
+        tabAuthLogin.classList.remove('is-active');
+        if (formAuthRegister) formAuthRegister.classList.remove('is-hidden');
+        if (formAuthLogin) formAuthLogin.classList.add('is-hidden');
+      });
+    }
+
+    if (formAuthRegister) {
+      formAuthRegister.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const inputName = document.getElementById('input-register-name');
+        const inputEmail = document.getElementById('input-register-email');
+        const inputPassword = document.getElementById('input-register-password');
+
+        const name = inputName ? inputName.value.trim() : '';
+        const email = inputEmail ? inputEmail.value.trim() : '';
+        const password = inputPassword ? inputPassword.value.trim() : '';
+
+        if (!email || !password) return;
+
+        if (password.length < 8) {
+          if (authRegisterFeedback) {
+            authRegisterFeedback.className = 'status-alert status-alert-error';
+            authRegisterFeedback.textContent = 'Password must be at least 8 characters long.';
+            authRegisterFeedback.classList.remove('is-hidden');
+          }
+          return;
+        }
+
+        if (btnSubmitRegister) {
+          btnSubmitRegister.disabled = true;
+          btnSubmitRegister.textContent = 'Creating account...';
+        }
+        if (authRegisterFeedback) authRegisterFeedback.classList.add('is-hidden');
+
+        try {
+          const res = await fetch('/api/auth/signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, email, password })
+          });
+          const data = await res.json();
+          if (btnSubmitRegister) {
+            btnSubmitRegister.disabled = false;
+            btnSubmitRegister.textContent = 'Create Free Account';
+          }
+
+          if (data.success && data.token) {
+            authToken = data.token;
+            currentUser = data.user;
+            localStorage.setItem('leadmap_auth_token', authToken);
+            updateAuthHeaderUI(currentUser);
+            if (modalAuth) modalAuth.classList.add('is-hidden');
+            hideAuthGate();
+            showToast(data.message || 'Account created successfully! Welcome to LeadMap Pro.', 'success');
+          } else {
+            if (authRegisterFeedback) {
+              authRegisterFeedback.className = 'status-alert status-alert-error';
+              authRegisterFeedback.textContent = data.error || 'Failed to create account.';
+              authRegisterFeedback.classList.remove('is-hidden');
+            }
+          }
+        } catch (err) {
+          if (btnSubmitRegister) {
+            btnSubmitRegister.disabled = false;
+            btnSubmitRegister.textContent = 'Create Free Account';
+          }
+          if (authRegisterFeedback) {
+            authRegisterFeedback.className = 'status-alert status-alert-error';
+            authRegisterFeedback.textContent = err.message || 'Network error.';
+            authRegisterFeedback.classList.remove('is-hidden');
+          }
+        }
       });
     }
 

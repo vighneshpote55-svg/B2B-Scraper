@@ -370,7 +370,8 @@ try:
         sync_all_history_to_supabase,
         save_user_to_supabase,
         get_user_from_supabase_by_email,
-        fetch_all_users_from_supabase
+        fetch_all_users_from_supabase,
+        register_user_in_supabase_auth
     )
 except ImportError:
     is_supabase_configured = lambda: False
@@ -385,6 +386,7 @@ except ImportError:
     save_user_to_supabase = lambda *args, **kwargs: {"success": False}
     get_user_from_supabase_by_email = lambda *args, **kwargs: None
     fetch_all_users_from_supabase = lambda *args, **kwargs: {}
+    register_user_in_supabase_auth = lambda *args, **kwargs: {"success": False}
 
 UA = "google-maps-scraper-dashboard/1.0"
 LEAD_FIELDS = ["lead_tier", "lead_score", "title", "phone", "emails", "website", "category", "address", "review_rating", "review_count", "instagram", "facebook", "linkedin"]
@@ -1133,6 +1135,15 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             _save_users(users)
 
             if is_supabase_configured():
+                try:
+                    auth_res = register_user_in_supabase_auth(email, password, name)
+                    if auth_res.get("success"):
+                        print(f"✔ Registered user {email} in Supabase Authentication ({auth_res.get('source', 'auth')})")
+                    else:
+                        print(f"[Supabase auth notice] {auth_res.get('error')}")
+                except Exception as ae:
+                    print(f"[Supabase auth error] {ae}")
+
                 try:
                     save_user_to_supabase(user_obj)
                 except Exception as sbe:

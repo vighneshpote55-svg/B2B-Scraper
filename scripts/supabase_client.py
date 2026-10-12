@@ -587,6 +587,70 @@ def sync_all_history_to_supabase(data_dir: str):
     return results
 
 
+def register_user_in_supabase_auth(email: str, password: str, name: str = "", supabase_url=None, supabase_key=None) -> dict:
+    """Register or sync user credentials into Supabase Authentication (/auth/v1).
+    
+    Tries Admin User creation first (when service_role key is used),
+    then falls back to standard user signup (/auth/v1/signup).
+    """
+    url = (supabase_url or os.environ.get("SUPABASE_URL", "")).strip().rstrip("/")
+    key = (supabase_key or os.environ.get("SUPABASE_KEY", "")).strip()
+
+    if not (url and key and email and password):
+        return {"success": False, "error": "Missing Supabase configuration or user credentials."}
+
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "User-Agent": "LeadMap-Pro-Supabase/1.0"
+    }
+
+    # 1. Try Admin API first (works with service_role key)
+    admin_endpoint = f"{url}/auth/v1/admin/users"
+    admin_payload = {
+        "email": email,
+        "password": password,
+        "email_confirm": True,
+        "user_metadata": {"name": name}
+    }
+    try:
+        data = json.dumps(admin_payload).encode("utf-8")
+        req = urllib.request.Request(admin_endpoint, data=data, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status in (200, 201):
+                res_data = json.loads(resp.read().decode("utf-8"))
+                return {"success": True, "auth_user": res_data, "source": "admin"}
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8", "replace")
+        if "already" in err_body.lower() or e.code == 422:
+            return {"success": False, "error": "User already registered in Supabase Auth.", "is_duplicate": True}
+    except Exception:
+        pass
+
+    # 2. Fall back to standard public Signup API (/auth/v1/signup)
+    signup_endpoint = f"{url}/auth/v1/signup"
+    signup_payload = {
+        "email": email,
+        "password": password,
+        "data": {"name": name}
+    }
+    try:
+        data = json.dumps(signup_payload).encode("utf-8")
+        req = urllib.request.Request(signup_endpoint, data=data, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status in (200, 201):
+                res_data = json.loads(resp.read().decode("utf-8"))
+                return {"success": True, "auth_user": res_data, "source": "signup"}
+            return {"success": True, "status": resp.status}
+    except urllib.error.HTTPError as e:
+        err_msg = e.read().decode("utf-8", "replace")
+        is_dup = "already" in err_msg.lower() or e.code == 422
+        return {"success": False, "error": f"HTTP {e.code}: {err_msg}", "is_duplicate": is_dup}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def save_user_to_supabase(user_obj: dict, supabase_url=None, supabase_key=None):
     """Store or update user profile in Supabase 'users' table."""
     url = (supabase_url or os.environ.get("SUPABASE_URL", "")).strip().rstrip("/")
