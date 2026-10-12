@@ -10,6 +10,7 @@ Provides:
 """
 import csv
 import hashlib
+import hmac
 import io
 import json
 import os
@@ -18,6 +19,7 @@ import secrets
 import socketserver
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -37,28 +39,248 @@ if os.path.isfile(_env_path):
 
 SCRAPER_BASE = os.environ.get("SCRAPER_BASE_URL", "http://localhost:8085")
 SCRAPER_KEY = os.environ.get("SCRAPER_API_KEY", "")
+HOST = os.environ.get("DASHBOARD_HOST", "127.0.0.1")
 PORT = int(os.environ.get("DASHBOARD_PORT", "3000"))
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web")
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 SESSIONS_FILE = os.path.join(DATA_DIR, "sessions.json")
+PASSWORD_RESETS_FILE = os.path.join(DATA_DIR, "password_resets.json")
+EMAIL_OUTBOX_FILE = os.path.join(DATA_DIR, "email_outbox.log")
+SESSION_TTL = int(os.environ.get("SESSION_TTL_SECONDS", 7 * 86400))  # 7 days session lifetime
+RESET_TOKEN_TTL = int(os.environ.get("RESET_TOKEN_TTL_SECONDS", 900))  # 15 minutes reset token lifetime
+MAX_REQUEST_BODY_SIZE = int(os.environ.get("MAX_REQUEST_BODY_SIZE", 10 * 1024 * 1024))  # 10 MB payload limit
+MAX_FAILED_LOGIN_ATTEMPTS = int(os.environ.get("MAX_FAILED_LOGIN_ATTEMPTS", 5))  # per account
+MAX_FAILED_LOGIN_PER_IP = int(os.environ.get("MAX_FAILED_LOGIN_PER_IP", 50))  # per IP
+LOGIN_LOCKOUT_WINDOW = int(os.environ.get("LOGIN_LOCKOUT_WINDOW_SECONDS", 300))  # 5 minutes
+LOGIN_ATTEMPTS = {}
+LOGIN_ATTEMPTS_LOCK = threading.Lock()
+RESETS_LOCK = threading.Lock()
 os.makedirs(DATA_DIR, exist_ok=True)
+
+DEFAULT_ALLOWED_ORIGINS = {
+    f"http://localhost:{PORT}",
+    f"http://127.0.0.1:{PORT}",
+    "http://localhost",
+    "http://127.0.0.1",
+}
+_custom_origins = os.environ.get("ALLOWED_ORIGINS", "")
+if _custom_origins:
+    ALLOWED_ORIGINS = DEFAULT_ALLOWED_ORIGINS.union({o.strip() for o in _custom_origins.split(",") if o.strip()})
+else:
+    ALLOWED_ORIGINS = DEFAULT_ALLOWED_ORIGINS
+
+JOB_ID_REGEX = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+
+def _validate_job_id(job_id: str) -> bool:
+    """Validate that job_id is alphanumeric with underscores/hyphens and max 64 chars."""
+    if not job_id or not isinstance(job_id, str):
+        return False
+    return bool(JOB_ID_REGEX.match(job_id.strip()))
+
+def _get_job_file_path(job_id: str):
+    """Safely resolve job JSON file path, preventing directory traversal."""
+    if not _validate_job_id(job_id):
+        return None
+    data_dir_abs = os.path.abspath(DATA_DIR)
+    safe_path = os.path.abspath(os.path.join(data_dir_abs, f"leads_{job_id.strip()}.json"))
+    if not safe_path.startswith(data_dir_abs + os.sep):
+        return None
+    return safe_path
 
 USER_LOCK = threading.Lock()
 
-def _hash_password(password, salt=None):
+def _atomic_json_write(filepath, data):
+    """Safely write JSON data to disk using temporary file and atomic rename."""
+    dir_name = os.path.dirname(filepath)
+    os.makedirs(dir_name, exist_ok=True)
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=dir_name, prefix=".tmp_", suffix=".json", text=True)
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp_path, filepath)
+    except Exception:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        raise
+
+def _check_login_rate_limit(client_ip, email):
+    """Check if client IP or email has exceeded max failed login attempts."""
+    now = time.time()
+    with LOGIN_ATTEMPTS_LOCK:
+        # Check email/account level lockout (prevent brute forcing victim account)
+        if email:
+            email_key = f"email:{email.lower()}"
+            record = LOGIN_ATTEMPTS.get(email_key)
+            if record:
+                attempts = [t for t in record if now - t < LOGIN_LOCKOUT_WINDOW]
+                LOGIN_ATTEMPTS[email_key] = attempts
+                if len(attempts) >= MAX_FAILED_LOGIN_ATTEMPTS:
+                    oldest = min(attempts)
+                    retry_after = int(LOGIN_LOCKOUT_WINDOW - (now - oldest)) + 1
+                    return True, max(1, retry_after)
+
+        # Check global IP level lockout (prevent distributed credential stuffing from single IP)
+        if client_ip:
+            ip_key = f"ip:{client_ip}"
+            record = LOGIN_ATTEMPTS.get(ip_key)
+            if record:
+                attempts = [t for t in record if now - t < LOGIN_LOCKOUT_WINDOW]
+                LOGIN_ATTEMPTS[ip_key] = attempts
+                if len(attempts) >= MAX_FAILED_LOGIN_PER_IP:
+                    oldest = min(attempts)
+                    retry_after = int(LOGIN_LOCKOUT_WINDOW - (now - oldest)) + 1
+                    return True, max(1, retry_after)
+
+    return False, 0
+
+def _record_login_failure(client_ip, email):
+    """Record a failed login attempt for IP and email."""
+    now = time.time()
+    with LOGIN_ATTEMPTS_LOCK:
+        if email:
+            LOGIN_ATTEMPTS.setdefault(f"email:{email.lower()}", []).append(now)
+        if client_ip:
+            LOGIN_ATTEMPTS.setdefault(f"ip:{client_ip}", []).append(now)
+
+def _reset_login_rate_limit(client_ip, email):
+    """Clear failed login attempts upon successful authentication."""
+    with LOGIN_ATTEMPTS_LOCK:
+        if email:
+            LOGIN_ATTEMPTS.pop(f"email:{email.lower()}", None)
+        if client_ip:
+            LOGIN_ATTEMPTS.pop(f"ip:{client_ip}", None)
+
+def _hash_password(password, salt=None, iterations=210000):
+    """Hash password using PBKDF2-HMAC-SHA256 with 210,000 iterations and 16-byte random salt."""
     if not salt:
         salt = secrets.token_hex(16)
-    hashed = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000).hex()
-    return f"{salt}:{hashed}"
+    hashed = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), iterations).hex()
+    return f"pbkdf2:sha256:{iterations}:{salt}:{hashed}"
 
 def _verify_password(password, stored_password_hash):
+    """Verify password in constant time using hmac.compare_digest; supports modern and legacy hashes."""
     try:
-        salt, hashed = stored_password_hash.split(":", 1)
-        check = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000).hex()
-        return check == hashed
+        parts = stored_password_hash.split(":")
+        if len(parts) == 5 and parts[0] == "pbkdf2" and parts[1] == "sha256":
+            iterations = int(parts[2])
+            salt = parts[3]
+            expected_hash = parts[4]
+            check = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), iterations).hex()
+            return hmac.compare_digest(check, expected_hash)
+        elif len(parts) == 2:
+            salt, expected_hash = parts
+            check = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000).hex()
+            return hmac.compare_digest(check, expected_hash)
+        return False
     except Exception:
         return False
+
+def _load_resets():
+    """Load password reset records with thread safety."""
+    with RESETS_LOCK:
+        if not os.path.isfile(PASSWORD_RESETS_FILE):
+            return {}
+        try:
+            with open(PASSWORD_RESETS_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+def _save_resets(resets):
+    """Persist password reset records atomically."""
+    with RESETS_LOCK:
+        _atomic_json_write(PASSWORD_RESETS_FILE, resets)
+
+def _create_password_reset_token(email):
+    """Generate secure single-use token, persist to resets file, and log out-of-band."""
+    token = secrets.token_hex(32)
+    now = time.time()
+    resets = _load_resets()
+    # Prune expired tokens
+    resets = {k: v for k, v in resets.items() if v.get("expires_at", 0) > now}
+    resets[token] = {
+        "email": email.lower(),
+        "created_at": now,
+        "expires_at": now + RESET_TOKEN_TTL,
+        "used": False
+    }
+    _save_resets(resets)
+
+    # Log to out-of-band delivery channel (never returned in HTTP response)
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(now))
+    log_entry = (
+        f"[{timestamp}] PASSWORD RESET REQUEST\n"
+        f"  Recipient: {email}\n"
+        f"  Token: {token}\n"
+        f"  Expires: in {RESET_TOKEN_TTL // 60} minutes\n"
+        f"  Reset Endpoint: POST /api/auth/reset-password\n"
+        f"{'-' * 60}\n"
+    )
+    try:
+        with open(EMAIL_OUTBOX_FILE, "a", encoding="utf-8") as f:
+            f.write(log_entry)
+        print(f"[AUTH NOTIFICATION] Password reset token generated for {email}. Logged to {EMAIL_OUTBOX_FILE}")
+    except Exception as e:
+        print(f"[AUTH WARNING] Failed to write reset token to outbox log: {e}")
+
+    return token
+
+def _validate_and_consume_reset_token(token, new_password):
+    """Validate token, update user password, mark token used, and revoke sessions."""
+    if not token or not isinstance(token, str):
+        return False, "Reset token is required."
+
+    token = token.strip()
+    resets = _load_resets()
+    reset_info = resets.get(token)
+    if not reset_info:
+        return False, "Invalid or expired password reset token."
+
+    now = time.time()
+    if reset_info.get("used"):
+        return False, "This password reset token has already been used."
+
+    if now > reset_info.get("expires_at", 0):
+        return False, "This password reset token has expired. Please request a new one."
+
+    email = reset_info.get("email", "").lower()
+    users = _load_users()
+    user = users.get(email)
+    if not user and is_supabase_configured():
+        user = get_user_from_supabase_by_email(email)
+
+    if not user:
+        return False, "Account associated with reset token no longer exists."
+
+    if not new_password or len(new_password) < 8:
+        return False, "New password must be at least 8 characters long."
+
+    # Update password with hardened 210,000 iterations PBKDF2
+    user["password_hash"] = _hash_password(new_password)
+    user["updated_at"] = now
+    users[email] = user
+    _save_users(users)
+    if is_supabase_configured():
+        try:
+            save_user_to_supabase(user)
+        except Exception as sbe:
+            print(f"[Supabase password update error] {sbe}")
+
+    reset_info["used"] = True
+    reset_info["used_at"] = now
+    resets[token] = reset_info
+    _save_resets(resets)
+
+    # Invalidate all active sessions for this user (prevent ongoing access with old credentials)
+    sessions = _load_sessions()
+    sessions = {k: v for k, v in sessions.items() if v.get("email", "").lower() != email}
+    _save_sessions(sessions)
+
+    return True, "Password updated successfully. You can now sign in with your new password."
 
 def _safe_ts(val):
     if val is None:
@@ -93,8 +315,7 @@ def _load_users():
 
 def _save_users(users):
     with USER_LOCK:
-        with open(USERS_FILE, "w") as f:
-            json.dump(users, f, indent=2)
+        _atomic_json_write(USERS_FILE, users)
 
 def _load_sessions():
     with USER_LOCK:
@@ -108,8 +329,7 @@ def _load_sessions():
 
 def _save_sessions(sessions):
     with USER_LOCK:
-        with open(SESSIONS_FILE, "w") as f:
-            json.dump(sessions, f, indent=2)
+        _atomic_json_write(SESSIONS_FILE, sessions)
 
 # Include cleanser module
 _repo_root = os.path.abspath(os.path.dirname(__file__))
@@ -123,7 +343,9 @@ try:
         extract_domain,
         enrich_socials,
         load_historical_leads,
-        filter_previously_seen_leads
+        filter_previously_seen_leads,
+        sanitize_csv_cell,
+        sanitize_csv_row
     )
 except ImportError:
     clean_lead = lambda x: x
@@ -132,6 +354,8 @@ except ImportError:
     enrich_socials = lambda x: x
     load_historical_leads = lambda *args, **kwargs: []
     filter_previously_seen_leads = lambda leads, hist: (leads, [])
+    sanitize_csv_cell = lambda x: x
+    sanitize_csv_row = lambda x: x
 
 try:
     from scripts.supabase_client import (
@@ -426,21 +650,117 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=WEB_DIR, **kwargs)
 
+    def _get_cors_origin(self):
+        """Return origin if present in configured ALLOWED_ORIGINS, else None."""
+        origin = self.headers.get("Origin", "").strip().rstrip("/")
+        if not origin:
+            return None
+        normalized_allowed = {o.rstrip("/") for o in ALLOWED_ORIGINS}
+        if origin in normalized_allowed:
+            return origin
+        return None
+
     def _send_json(self, data, status_code=200):
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        cors_origin = self._get_cors_origin()
+        if cors_origin:
+            self.send_header("Access-Control-Allow-Origin", cors_origin)
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Session-Token")
+            self.send_header("Access-Control-Allow-Credentials", "true")
+            self.send_header("Vary", "Origin")
         self.end_headers()
         self.wfile.write(json.dumps(data).encode("utf-8"))
 
     def do_OPTIONS(self):
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        cors_origin = self._get_cors_origin()
+        if cors_origin:
+            self.send_header("Access-Control-Allow-Origin", cors_origin)
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Session-Token")
+            self.send_header("Access-Control-Allow-Credentials", "true")
+            self.send_header("Vary", "Origin")
         self.end_headers()
+
+    def _read_json_body(self, max_size=MAX_REQUEST_BODY_SIZE):
+        """Safely read and parse request JSON body with size limits and error checks."""
+        content_length_header = self.headers.get("Content-Length")
+        if not content_length_header:
+            return {}
+        try:
+            content_length = int(content_length_header.strip())
+        except ValueError:
+            self._send_json({"error": "Invalid Content-Length header"}, 400)
+            return None
+
+        if content_length < 0:
+            self._send_json({"error": "Negative Content-Length header"}, 400)
+            return None
+
+        if content_length > max_size:
+            self._send_json({"error": f"Request payload too large (maximum {max_size} bytes allowed)"}, 413)
+            return None
+
+        if content_length == 0:
+            return {}
+
+        try:
+            raw_bytes = self.rfile.read(content_length)
+            if len(raw_bytes) != content_length:
+                self._send_json({"error": "Request body truncated or incomplete"}, 400)
+                return None
+            return json.loads(raw_bytes.decode("utf-8"))
+        except json.JSONDecodeError:
+            self._send_json({"error": "Invalid JSON payload"}, 400)
+            return None
+        except Exception as e:
+            self._send_json({"error": f"Error reading request: {str(e)}"}, 400)
+            return None
+
+    def _get_authenticated_user(self):
+        """Extract and validate bearer token or session header with expiration check."""
+        auth_header = self.headers.get("Authorization", "").strip()
+        token = ""
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:].strip()
+        elif self.headers.get("X-Session-Token"):
+            token = self.headers.get("X-Session-Token").strip()
+
+        if not token:
+            return None
+
+        sessions = _load_sessions()
+        session_info = sessions.get(token)
+        if not session_info:
+            return None
+
+        now = time.time()
+        expires_at = session_info.get("expires_at")
+        created_at = session_info.get("created_at", now)
+        if expires_at is not None:
+            if now > expires_at:
+                return None
+        else:
+            if now - created_at > SESSION_TTL:
+                return None
+
+        email = session_info.get("email", "")
+        if not email:
+            return None
+
+        users = _load_users()
+        user = users.get(email)
+        return user
+
+    def _require_auth(self):
+        """Require valid active session; return 401 Unauthorized if missing/expired/revoked."""
+        user = self._get_authenticated_user()
+        if not user:
+            self._send_json({"error": "Authentication required. Please sign in."}, 401)
+            return None
+        return user
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -453,24 +773,11 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
 
         # REST API Routes
         if path == "/api/auth/me":
-            auth_header = self.headers.get("Authorization", "")
-            token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else ""
-            if not token:
-                # check query params
-                token = query.get("token", [""])[0]
-            
-            sessions = _load_sessions()
-            user_session = sessions.get(token)
-            if not user_session:
-                self._send_json({"authenticated": False, "user": None})
-                return
-            
-            users = _load_users()
-            user = users.get(user_session.get("email", ""))
+            user = self._get_authenticated_user()
             if not user:
-                self._send_json({"authenticated": False, "user": None})
+                self._send_json({"authenticated": False, "user": None}, 401)
                 return
-            
+
             self._send_json({
                 "authenticated": True,
                 "user": {
@@ -513,6 +820,8 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path in ("/api/jobs", "/api/history"):
+            if not self._require_auth():
+                return
             # List past and current jobs
             jobs = []
             with JOB_LOCK:
@@ -580,14 +889,23 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path.startswith("/api/job/") and path.endswith("/status"):
-            job_id = path.split("/")[3]
+            if not self._require_auth():
+                return
+            parts = path.split("/")
+            if len(parts) < 4:
+                self._send_json({"error": "Invalid job ID"}, 400)
+                return
+            job_id = parts[3]
+            if not _validate_job_id(job_id):
+                self._send_json({"error": "Invalid job ID format"}, 400)
+                return
             with JOB_LOCK:
                 job_info = JOB_CACHE.get(job_id)
 
             if not job_info:
-                # Check on disk
-                saved_file = os.path.join(DATA_DIR, f"leads_{job_id}.json")
-                if os.path.isfile(saved_file):
+                # Check on disk safely
+                saved_file = _get_job_file_path(job_id)
+                if saved_file and os.path.isfile(saved_file):
                     with open(saved_file) as f:
                         d = json.load(f)
                         leads = d.get("leads", [])
@@ -643,15 +961,24 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path.startswith("/api/job/") and path.endswith("/leads"):
-            job_id = path.split("/")[3]
+            if not self._require_auth():
+                return
+            parts = path.split("/")
+            if len(parts) < 4:
+                self._send_json({"error": "Invalid job ID"}, 400)
+                return
+            job_id = parts[3]
+            if not _validate_job_id(job_id):
+                self._send_json({"error": "Invalid job ID format"}, 400)
+                return
             leads = []
             with JOB_LOCK:
                 if job_id in JOB_CACHE:
                     leads = JOB_CACHE[job_id].get("leads", [])
 
             if not leads:
-                saved_file = os.path.join(DATA_DIR, f"leads_{job_id}.json")
-                if os.path.isfile(saved_file):
+                saved_file = _get_job_file_path(job_id)
+                if saved_file and os.path.isfile(saved_file):
                     with open(saved_file) as f:
                         d = json.load(f)
                         leads = d.get("leads", [])
@@ -665,7 +992,12 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/export":
-            job_id = query.get("job_id", [""])[0]
+            if not self._require_auth():
+                return
+            job_id = query.get("job_id", [""])[0].strip()
+            if not _validate_job_id(job_id):
+                self._send_json({"error": "Invalid or missing job ID"}, 400)
+                return
             fmt = query.get("format", ["csv"])[0].lower()
 
             leads = []
@@ -674,8 +1006,8 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                     leads = JOB_CACHE[job_id].get("leads", [])
 
             if not leads:
-                saved_file = os.path.join(DATA_DIR, f"leads_{job_id}.json")
-                if os.path.isfile(saved_file):
+                saved_file = _get_job_file_path(job_id)
+                if saved_file and os.path.isfile(saved_file):
                     with open(saved_file) as f:
                         d = json.load(f)
                         leads = d.get("leads", [])
@@ -709,20 +1041,20 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                 writer.writeheader()
                 for l in leads:
                     writer.writerow({
-                        "Company Name": l.get("title", ""),
-                        "Contact Email": l.get("emails", ""),
-                        "Phone Number": l.get("clean_phone") or l.get("phone", ""),
-                        "Website": l.get("website", ""),
-                        "Domain": l.get("domain", ""),
-                        "Lead Tier": l.get("lead_tier", ""),
+                        "Company Name": sanitize_csv_cell(l.get("title", "")),
+                        "Contact Email": sanitize_csv_cell(l.get("emails", "")),
+                        "Phone Number": sanitize_csv_cell(l.get("clean_phone") or l.get("phone", "")),
+                        "Website": sanitize_csv_cell(l.get("website", "")),
+                        "Domain": sanitize_csv_cell(l.get("domain", "")),
+                        "Lead Tier": sanitize_csv_cell(l.get("lead_tier", "")),
                         "Lead Score": l.get("lead_score", 0),
-                        "Category": l.get("category", ""),
-                        "Full Address": l.get("address", ""),
-                        "Rating": l.get("review_rating", ""),
-                        "Review Count": l.get("review_count", ""),
-                        "Instagram": l.get("instagram", ""),
-                        "Facebook": l.get("facebook", ""),
-                        "LinkedIn": l.get("linkedin", "")
+                        "Category": sanitize_csv_cell(l.get("category", "")),
+                        "Full Address": sanitize_csv_cell(l.get("address", "")),
+                        "Rating": sanitize_csv_cell(l.get("review_rating", "")),
+                        "Review Count": sanitize_csv_cell(l.get("review_count", "")),
+                        "Instagram": sanitize_csv_cell(l.get("instagram", "")),
+                        "Facebook": sanitize_csv_cell(l.get("facebook", "")),
+                        "LinkedIn": sanitize_csv_cell(l.get("linkedin", ""))
                     })
                 self.send_response(200)
                 self.send_header("Content-Type", "text/csv; charset=utf-8")
@@ -738,7 +1070,7 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                 writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
                 writer.writeheader()
                 for l in leads:
-                    writer.writerow(l)
+                    writer.writerow(sanitize_csv_row(l))
                 self.send_response(200)
                 self.send_header("Content-Type", "text/csv; charset=utf-8")
                 self.send_header("Content-Disposition", f'attachment; filename="{filename_base}_clean.csv"')
@@ -753,12 +1085,8 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
         path = parsed.path
 
         if path == "/api/auth/signup":
-            content_length = int(self.headers.get("Content-Length", 0))
-            body_bytes = self.rfile.read(content_length)
-            try:
-                params = json.loads(body_bytes.decode("utf-8"))
-            except Exception:
-                self._send_json({"error": "Invalid JSON payload"}, 400)
+            params = self._read_json_body()
+            if params is None:
                 return
 
             email = params.get("email", "").strip().lower()
@@ -800,7 +1128,8 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             sessions[token] = {
                 "email": email,
                 "user_id": user_id,
-                "created_at": time.time()
+                "created_at": time.time(),
+                "expires_at": time.time() + SESSION_TTL
             }
             _save_sessions(sessions)
 
@@ -817,12 +1146,8 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/auth/login":
-            content_length = int(self.headers.get("Content-Length", 0))
-            body_bytes = self.rfile.read(content_length)
-            try:
-                params = json.loads(body_bytes.decode("utf-8"))
-            except Exception:
-                self._send_json({"error": "Invalid JSON payload"}, 400)
+            params = self._read_json_body()
+            if params is None:
                 return
 
             email = params.get("email", "").strip().lower()
@@ -832,18 +1157,47 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": "Please provide both email and password."}, 400)
                 return
 
+            client_ip = self.client_address[0] if hasattr(self, 'client_address') and self.client_address else "127.0.0.1"
+
+            # Check rate limiting
+            is_limited, retry_after = _check_login_rate_limit(client_ip, email)
+            if is_limited:
+                self.send_response(429)
+                self.send_header("Retry-After", str(retry_after))
+                cors_origin = self._get_cors_origin()
+                if cors_origin:
+                    self.send_header("Access-Control-Allow-Origin", cors_origin)
+                    self.send_header("Access-Control-Allow-Credentials", "true")
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "error": f"Too many failed login attempts. Please try again in {retry_after} seconds."
+                }).encode("utf-8"))
+                return
+
             users = _load_users()
             user = users.get(email)
             if not user or not _verify_password(password, user.get("password_hash", "")):
+                _record_login_failure(client_ip, email)
                 self._send_json({"error": "Invalid email or password."}, 401)
                 return
+
+            # Clear failed attempts on successful login
+            _reset_login_rate_limit(client_ip, email)
+
+            # Transparently upgrade legacy hash to PBKDF2 210,000 iterations
+            if not user.get("password_hash", "").startswith("pbkdf2:sha256:"):
+                user["password_hash"] = _hash_password(password)
+                users[email] = user
+                _save_users(users)
 
             token = secrets.token_hex(24)
             sessions = _load_sessions()
             sessions[token] = {
                 "email": email,
                 "user_id": user.get("id"),
-                "created_at": time.time()
+                "created_at": time.time(),
+                "expires_at": time.time() + SESSION_TTL
             }
             _save_sessions(sessions)
 
@@ -870,16 +1224,11 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/auth/forgot-password":
-            content_length = int(self.headers.get("Content-Length", 0))
-            body_bytes = self.rfile.read(content_length)
-            try:
-                params = json.loads(body_bytes.decode("utf-8"))
-            except Exception:
-                self._send_json({"error": "Invalid JSON payload"}, 400)
+            params = self._read_json_body()
+            if params is None:
                 return
 
             email = params.get("email", "").strip().lower()
-            new_password = params.get("new_password", "").strip()
 
             if not email or "@" not in email:
                 self._send_json({"error": "Please enter a valid work email address."}, 400)
@@ -890,122 +1239,70 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             if not user and is_supabase_configured():
                 user = get_user_from_supabase_by_email(email)
 
-            if not user:
-                self._send_json({"error": "No account found with this email address."}, 404)
-                return
+            if user:
+                _create_password_reset_token(email)
 
-            if new_password:
-                if len(new_password) < 8:
-                    self._send_json({"error": "New password must be at least 8 characters long."}, 400)
-                    return
-                user["password_hash"] = _hash_password(new_password)
-                user["updated_at"] = time.time()
-                users[email] = user
-                _save_users(users)
-                if is_supabase_configured():
-                    try:
-                        save_user_to_supabase(user)
-                    except Exception as sbe:
-                        print(f"[Supabase password update error] {sbe}")
-                self._send_json({"success": True, "message": "Password updated successfully! You can now sign in."})
-                return
-
-            # Password reset link simulation
-            reset_token = secrets.token_hex(16)
+            # Always return identical generic confirmation to prevent user enumeration
+            # Notice: The reset token is NEVER leaked in the HTTP response
             self._send_json({
                 "success": True,
-                "message": f"Password reset instructions have been generated for {email}.",
-                "reset_token": reset_token
+                "message": "If an account exists with this email address, password reset instructions have been sent."
             })
+            return
+
+        if path == "/api/auth/reset-password":
+            params = self._read_json_body()
+            if params is None:
+                return
+
+            token = params.get("token", "").strip()
+            new_password = params.get("new_password", "").strip()
+
+            if not token:
+                self._send_json({"error": "Reset token is required."}, 400)
+                return
+
+            if not new_password or len(new_password) < 8:
+                self._send_json({"error": "New password must be at least 8 characters long."}, 400)
+                return
+
+            ok, msg = _validate_and_consume_reset_token(token, new_password)
+            if not ok:
+                self._send_json({"error": msg}, 400)
+                return
+
+            self._send_json({"success": True, "message": msg})
             return
 
         if path == "/api/auth/google":
-            content_length = int(self.headers.get("Content-Length", 0))
-            body_bytes = self.rfile.read(content_length)
-            try:
-                params = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
-            except Exception:
-                params = {}
-
-            email = params.get("email", "").strip().lower()
-            name = params.get("name", "").strip()
-            
-            # Default / simulated Google profile if prompt used
-            if not email:
-                email = "user.google@leadmappro.io"
-                name = "Google User"
-
-            users = _load_users()
-            user = users.get(email)
-
-            if not user:
-                user_id = secrets.token_hex(8)
-                user = {
-                    "id": user_id,
-                    "name": name or email.split("@")[0].capitalize(),
-                    "email": email,
-                    "auth_provider": "google",
-                    "password_hash": _hash_password(secrets.token_hex(16)),
-                    "created_at": time.time(),
-                    "last_login_at": time.time()
-                }
-                users[email] = user
-                _save_users(users)
-                if is_supabase_configured():
-                    try:
-                        save_user_to_supabase(user)
-                    except Exception as sbe:
-                        print(f"[Supabase sync Google user error] {sbe}")
-            else:
-                user["last_login_at"] = time.time()
-                users[email] = user
-                _save_users(users)
-                if is_supabase_configured():
-                    try:
-                        save_user_to_supabase(user)
-                    except Exception as sbe:
-                        print(f"[Supabase sync Google login error] {sbe}")
-
-            token = secrets.token_hex(24)
-            sessions = _load_sessions()
-            sessions[token] = {
-                "email": email,
-                "user_id": user.get("id"),
-                "auth_provider": "google",
-                "created_at": time.time()
-            }
-            _save_sessions(sessions)
-
+            # Disabled until verified server-side OAuth2/OIDC token verification is configured
             self._send_json({
-                "success": True,
-                "message": f"Signed in with Google as {user.get('email')}!",
-                "token": token,
-                "user": {
-                    "id": user.get("id"),
-                    "name": user.get("name"),
-                    "email": user.get("email")
-                }
-            })
+                "error": "Google Sign-In is disabled until verified server-side OAuth2/OIDC token verification is configured.",
+                "code": "OAUTH_DISABLED"
+            }, 501)
             return
 
         if path == "/api/auth/logout":
-            auth_header = self.headers.get("Authorization", "")
-            token = auth_header.replace("Bearer ", "").strip() if auth_header.startswith("Bearer ") else ""
-            if token:
-                sessions = _load_sessions()
-                if token in sessions:
-                    del sessions[token]
-                    _save_sessions(sessions)
+            auth_header = self.headers.get("Authorization", "").strip()
+            token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else ""
+            if not token and self.headers.get("X-Session-Token"):
+                token = self.headers.get("X-Session-Token").strip()
+            sessions = _load_sessions()
+            if token and token in sessions:
+                del sessions[token]
+            # Prune any expired sessions
+            now = time.time()
+            sessions = {k: v for k, v in sessions.items() if v.get("expires_at", v.get("created_at", 0) + SESSION_TTL) > now}
+            _save_sessions(sessions)
             self._send_json({"success": True, "message": "Logged out successfully."})
             return
 
         if path == "/api/scrape/start":
-            content_length = int(self.headers.get("Content-Length", 0))
-            body_bytes = self.rfile.read(content_length)
-            try:
-                params = json.loads(body_bytes.decode("utf-8"))
-            except Exception:
-                self._send_json({"error": "Invalid JSON body"}, 400)
+            if not self._require_auth():
+                return
+
+            params = self._read_json_body()
+            if params is None:
                 return
 
             keyword = params.get("keyword", "").strip()
@@ -1096,15 +1393,14 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/scrape/stop":
-            content_length = int(self.headers.get("Content-Length", 0))
-            body_bytes = self.rfile.read(content_length)
-            try:
-                params = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
-            except Exception:
-                params = {}
-            job_id = params.get("job_id")
-            if not job_id:
-                self._send_json({"error": "job_id is required"}, 400)
+            if not self._require_auth():
+                return
+            params = self._read_json_body()
+            if params is None:
+                return
+            job_id = params.get("job_id", "")
+            if not job_id or not _validate_job_id(job_id):
+                self._send_json({"error": "Invalid or missing job_id"}, 400)
                 return
             with JOB_LOCK:
                 if job_id in JOB_CACHE:
@@ -1119,6 +1415,8 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/docker/restart":
+            if not self._require_auth():
+                return
             # Attempt to restart or start docker container
             try:
                 res = subprocess.run(["docker", "compose", "up", "-d"], cwd=os.path.dirname(__file__), capture_output=True, text=True, timeout=30)
@@ -1132,8 +1430,11 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/supabase/test":
-            content_length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(content_length).decode("utf-8")) if content_length > 0 else {}
+            if not self._require_auth():
+                return
+            body = self._read_json_body()
+            if body is None:
+                return
             url = body.get("url", "").strip().rstrip("/")
             key = body.get("key", "").strip()
             table = body.get("table", "leads").strip() or "leads"
@@ -1143,8 +1444,11 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path in ("/api/supabase/save", "/api/supabase/config"):
-            content_length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(content_length).decode("utf-8")) if content_length > 0 else {}
+            if not self._require_auth():
+                return
+            body = self._read_json_body()
+            if body is None:
+                return
             url = body.get("url", "").strip().rstrip("/")
             key = body.get("key", "").strip()
             table = body.get("table", "leads").strip() or "leads"
@@ -1194,6 +1498,8 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/supabase/disconnect":
+            if not self._require_auth():
+                return
             disconnect_supabase()
             self._send_json({
                 "success": True,
@@ -1203,9 +1509,15 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/supabase/sync":
-            content_length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(content_length).decode("utf-8")) if content_length > 0 else {}
+            if not self._require_auth():
+                return
+            body = self._read_json_body()
+            if body is None:
+                return
             job_id = body.get("job_id", "")
+            if job_id and not _validate_job_id(job_id):
+                self._send_json({"error": "Invalid job_id format"}, 400)
+                return
             custom_leads = body.get("leads")
 
             leads_to_sync = []
@@ -1221,8 +1533,8 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                         job_id = latest_job.get("id", "")
 
                 if not leads_to_sync and job_id:
-                    saved_file = os.path.join(DATA_DIR, f"leads_{job_id}.json")
-                    if os.path.isfile(saved_file):
+                    saved_file = _get_job_file_path(job_id)
+                    if saved_file and os.path.isfile(saved_file):
                         with open(saved_file) as f:
                             d = json.load(f)
                             leads_to_sync = d.get("leads", [])
@@ -1236,6 +1548,8 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/history/sync-all":
+            if not self._require_auth():
+                return
             res = sync_all_history_to_supabase(DATA_DIR)
             self._send_json({
                 "success": True,
@@ -1250,10 +1564,13 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
 
 
 def run_server():
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), DashboardRequestHandler)
+    server = ThreadingHTTPServer((HOST, PORT), DashboardRequestHandler)
     print("=" * 65)
     print(f"🗺️  Google Maps Scraper Pro Dashboard running at:")
-    print(f"    👉  http://localhost:{PORT}")
+    print(f"    👉  http://{HOST}:{PORT}")
+    print(f"    Host Binding: {HOST} (Single-user Local Isolation)")
+    if HOST != "127.0.0.1":
+        print(f"    ⚠️  Remote Host Binding Active! Ensure network access is secured.")
     print(f"    Connected Scraper Backend: {SCRAPER_BASE}")
     print("=" * 65)
     try:

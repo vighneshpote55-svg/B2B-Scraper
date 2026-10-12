@@ -34,15 +34,17 @@ if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
 
 try:
-    from scripts.cleanser import clean_lead, deduplicate_leads, load_historical_leads, filter_previously_seen_leads
+    from scripts.cleanser import clean_lead, deduplicate_leads, load_historical_leads, filter_previously_seen_leads, _fetch_site_html, sanitize_csv_row
 except ImportError:
     try:
-        from cleanser import clean_lead, deduplicate_leads, load_historical_leads, filter_previously_seen_leads
+        from cleanser import clean_lead, deduplicate_leads, load_historical_leads, filter_previously_seen_leads, _fetch_site_html, sanitize_csv_row
     except ImportError:
         clean_lead = lambda x: x
         deduplicate_leads = lambda x: x
         load_historical_leads = lambda *args, **kwargs: []
         filter_previously_seen_leads = lambda leads, hist: (leads, [])
+        _fetch_site_html = lambda *args, **kwargs: ""
+        sanitize_csv_row = lambda x: x
 
 BASE = os.environ.get("SCRAPER_BASE_URL", "http://localhost:8080")
 KEY = os.environ.get("SCRAPER_API_KEY", "")
@@ -108,17 +110,7 @@ _SKIP_HANDLE = {"", "home", "pages", "people", "help", "about", "policies", "pol
                 "groups", "marketplace", "gaming", "photo", "hashtag", "search"}
 
 def _fetch_html(url, timeout=10):
-    if not url:
-        return ""
-    if not url.startswith(("http://", "https://")):
-        url = "http://" + url
-    try:
-        r = urllib.request.Request(url, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; " + UA + ")", "Accept": "text/html"})
-        with urllib.request.urlopen(r, timeout=timeout) as resp:
-            return resp.read(400_000).decode("utf-8", "replace")
-    except Exception:
-        return ""
+    return _fetch_site_html(url, timeout=timeout)
 
 def _find_socials(html):
     out = {"instagram": "", "facebook": "", "linkedin": ""}
@@ -300,7 +292,7 @@ def main():
         with open(out, "w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
             w.writeheader()
-            w.writerows(results)
+            w.writerows([sanitize_csv_row(r) for r in results])
     print(f"  saved → {out}")
     for r in results[:5]:
         score_tag = f"[{r.get('lead_tier','')} {r.get('lead_score','')}] " if a.score and a.clean else ""

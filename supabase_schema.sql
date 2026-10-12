@@ -103,9 +103,7 @@ CREATE POLICY "Allow anon read and write on scrape_history"
     USING (true)
     WITH CHECK (true);
 
--- ==============================================================================
 -- 6. Create 'users' table for storing registered LeadMap user profiles & sessions
--- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.users (
     id TEXT PRIMARY KEY,
     created_at TIMESTAMPTZ DEFAULT now(),
@@ -120,10 +118,14 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON public.users (email);
 
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow anon read and write on users"
+-- CRITICAL SECURITY HARDENING: Never grant anon or authenticated roles access
+-- to public.users because it contains bcrypt password hashes.
+-- Only backend service_role is permitted to read and write.
+DROP POLICY IF EXISTS "Allow anon read and write on users" ON public.users;
+CREATE POLICY "Strict service role only on users"
     ON public.users
     FOR ALL
-    TO anon, authenticated, service_role
+    TO service_role
     USING (true)
     WITH CHECK (true);
 

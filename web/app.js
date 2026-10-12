@@ -27,6 +27,39 @@
   let mapMarkersLayer = null;
   let currentViewMode = 'table';
 
+  // ── Authentication & Security Helpers ─────────────────────────────────────
+  function getAuthToken() {
+    return localStorage.getItem('leadmap_auth_token') || '';
+  }
+
+  async function authFetch(url, options = {}) {
+    const token = getAuthToken();
+    const headers = new Headers(options.headers || {});
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+      headers.set('X-Session-Token', token);
+    }
+    const finalOptions = { ...options, headers };
+    const res = await fetch(url, finalOptions);
+    if (res.status === 401) {
+      localStorage.removeItem('leadmap_auth_token');
+      localStorage.removeItem('leadmap_user_profile');
+      if (typeof window.leadmapShowAuthGate === 'function') {
+        window.leadmapShowAuthGate();
+      }
+    }
+    return res;
+  }
+
+  function sanitizeUrl(url) {
+    if (!url || typeof url !== 'string') return '';
+    const trimmed = url.trim();
+    if (/^https?:\/\//i.test(trimmed)) {
+      return trimmed;
+    }
+    return '';
+  }
+
   // ── DOM References ─────────────────────────────────────────────────────────
   const scraperStatusPill = document.getElementById('scraper-status-pill');
   const scraperStatusText = document.getElementById('scraper-status-text');
@@ -601,7 +634,7 @@
         btnCancelScrape.disabled = true;
         btnCancelScrape.innerHTML = '<span>Stopping...</span>';
         try {
-          const res = await fetch('/api/scrape/stop', {
+          const res = await authFetch('/api/scrape/stop', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ job_id: currentJobId })
@@ -660,7 +693,7 @@
     startElapsedTimer();
 
     try {
-      const res = await fetch('/api/scrape/start', {
+      const res = await authFetch('/api/scrape/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -697,7 +730,7 @@
     clearInterval(pollTimer);
     pollTimer = setInterval(async () => {
       try {
-        const res = await fetch(`/api/job/${jobId}/status`);
+        const res = await authFetch(`/api/job/${jobId}/status`);
         if (!res.ok) return;
         const job = await res.json();
 
@@ -767,7 +800,7 @@
   // ── Auto-load Most Recent Job on Startup ───────────────────────────────────
   async function loadInitialJobIfAvailable() {
     try {
-      const res = await fetch('/api/jobs');
+      const res = await authFetch('/api/jobs');
       if (!res.ok) return;
       const data = await res.json();
       const jobs = data.jobs || [];
@@ -787,14 +820,14 @@
   // Load leads from API
   async function loadJobLeads(jobId) {
     try {
-      const res = await fetch(`/api/job/${jobId}/leads`);
+      const res = await authFetch(`/api/job/${jobId}/leads`);
       const data = await res.json();
       allLeads = data.leads || [];
       currentJobId = jobId;
 
       // Check status to display incremental deduplication notice
       try {
-        const sRes = await fetch(`/api/job/${jobId}/status`);
+        const sRes = await authFetch(`/api/job/${jobId}/status`);
         if (sRes.ok) {
           const sData = await sRes.json();
           const skippedCount = sData.skipped_previous_count || (sData.metrics && sData.metrics.skipped_previous) || 0;
@@ -972,21 +1005,23 @@ Lead Partnerships Team`;
     btnCopyDossierEmail.dataset.copy = emailVal || '';
     btnCopyDossierEmail.style.display = emailVal ? 'inline-flex' : 'none';
 
-    if (webVal) {
-      dossierWebsiteLink.textContent = domainVal || webVal;
-      dossierWebsiteLink.href = webVal;
+    const safeWeb = sanitizeUrl(webVal);
+    if (safeWeb) {
+      dossierWebsiteLink.textContent = domainVal || safeWeb;
+      dossierWebsiteLink.href = safeWeb;
       dossierWebsiteLink.style.display = 'inline-flex';
     } else {
-      dossierWebsiteLink.textContent = '—';
+      dossierWebsiteLink.textContent = webVal ? escapeHtml(webVal) : '—';
       dossierWebsiteLink.removeAttribute('href');
+      dossierWebsiteLink.style.display = webVal ? 'inline-flex' : 'none';
     }
 
     dossierAddress.textContent = lead.address || '—';
 
     // Social Presence Chips
-    const igVal = lead.instagram || '';
-    const fbVal = lead.facebook || '';
-    const liVal = lead.linkedin || '';
+    const igVal = sanitizeUrl(lead.instagram || '');
+    const fbVal = sanitizeUrl(lead.facebook || '');
+    const liVal = sanitizeUrl(lead.linkedin || '');
     if (igVal || fbVal || liVal) {
       let socHtml = '';
       if (igVal) {
@@ -1246,7 +1281,7 @@ Lead Partnerships Team`;
         const orig = btnBulkSyncSupabase.innerHTML;
         btnBulkSyncSupabase.innerHTML = '<span>Syncing...</span>';
         try {
-          const res = await fetch('/api/supabase/sync', {
+          const res = await authFetch('/api/supabase/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ leads: selected, job_id: currentJobId })
@@ -1537,17 +1572,18 @@ Lead Partnerships Team`;
 
       // Website
       const webVal = lead.website || '';
+      const safeWeb = sanitizeUrl(webVal);
       const domainVal = lead.domain || (webVal ? webVal.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0] : '');
-      const websiteHtml = webVal ? `
-        <a href="${escapeHtml(webVal)}" target="_blank" rel="noopener noreferrer" class="website-link" title="${escapeHtml(webVal)}">
+      const websiteHtml = safeWeb ? `
+        <a href="${escapeHtml(safeWeb)}" target="_blank" rel="noopener noreferrer" class="website-link" title="${escapeHtml(safeWeb)}">
           <span>${escapeHtml(domainVal || 'Visit Site')}</span>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-        </a>` : '<span style="color:var(--text-muted);font-size:0.75rem">—</span>';
+        </a>` : (webVal ? `<span>${escapeHtml(domainVal || webVal)}</span>` : '<span style="color:var(--text-muted);font-size:0.75rem">—</span>');
 
       // Social Profiles (Instagram, Facebook, LinkedIn)
-      const igVal = lead.instagram || '';
-      const fbVal = lead.facebook || '';
-      const liVal = lead.linkedin || '';
+      const igVal = sanitizeUrl(lead.instagram || '');
+      const fbVal = sanitizeUrl(lead.facebook || '');
+      const liVal = sanitizeUrl(lead.linkedin || '');
       let socialsHtml = '';
       if (igVal || fbVal || liVal) {
         socialsHtml = '<div class="social-chips-row">';
@@ -1759,14 +1795,39 @@ Lead Partnerships Team`;
     });
 
     document.querySelectorAll('.dropdown-item[data-export-fmt]').forEach((item) => {
-      item.addEventListener('click', () => {
+      item.addEventListener('click', async () => {
         if (!currentJobId) {
           showToast('No active leads to export.', 'error');
           return;
         }
         const fmt = item.dataset.exportFmt;
-        window.location.href = `/api/export?job_id=${encodeURIComponent(currentJobId)}&format=${encodeURIComponent(fmt)}`;
-        showToast(`Exporting ${fmt.toUpperCase()}...`, 'success');
+        showToast(`Preparing ${fmt.toUpperCase()} export...`, 'info');
+        try {
+          const res = await authFetch(`/api/export?job_id=${encodeURIComponent(currentJobId)}&format=${encodeURIComponent(fmt)}`);
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            showToast(err.error || 'Export failed.', 'error');
+            return;
+          }
+          const blob = await res.blob();
+          const downloadUrl = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = downloadUrl;
+          let filename = `leads_${currentJobId.slice(0, 8)}_${fmt}.${fmt === 'json' ? 'json' : 'csv'}`;
+          const disposition = res.headers.get('content-disposition');
+          if (disposition && disposition.includes('filename=')) {
+            const match = disposition.match(/filename="?([^"]+)"?/);
+            if (match && match[1]) filename = match[1];
+          }
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          window.URL.revokeObjectURL(downloadUrl);
+          showToast(`Exported ${fmt.toUpperCase()} successfully!`, 'success');
+        } catch (err) {
+          showToast('Export failed: ' + err.message, 'error');
+        }
       });
     });
   }
@@ -1787,7 +1848,7 @@ Lead Partnerships Team`;
         btnSyncAllHistory.disabled = true;
         btnSyncAllHistory.innerHTML = '<span>⏳ Syncing all archives...</span>';
         try {
-          const res = await fetch('/api/history/sync-all', { method: 'POST' });
+          const res = await authFetch('/api/history/sync-all', { method: 'POST' });
           const data = await res.json();
           if (data.success) {
             showToast(data.message || 'All history synced to Supabase!', 'success');
@@ -1819,7 +1880,7 @@ Lead Partnerships Team`;
     historyList.innerHTML = '<div class="empty-history">Loading archives...</div>';
 
     try {
-      const res = await fetch('/api/jobs');
+      const res = await authFetch('/api/jobs');
       const data = await res.json();
       const jobs = data.jobs || [];
 
@@ -1995,7 +2056,7 @@ Lead Partnerships Team`;
       btnTestSupabase.textContent = 'Testing in Memory...';
 
       try {
-        const res = await fetch('/api/supabase/test', {
+        const res = await authFetch('/api/supabase/test', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url, key, table })
@@ -2035,7 +2096,7 @@ Lead Partnerships Team`;
       btnSaveSupabase.textContent = 'Verifying & Saving...';
 
       try {
-        const res = await fetch('/api/supabase/save', {
+        const res = await authFetch('/api/supabase/save', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url, key, table, auto_sync: autoSync })
@@ -2066,7 +2127,7 @@ Lead Partnerships Team`;
       btnDisconnectSupabase.addEventListener('click', async () => {
         addMicroBounce(btnDisconnectSupabase);
         try {
-          const res = await fetch('/api/supabase/disconnect', { method: 'POST' });
+          const res = await authFetch('/api/supabase/disconnect', { method: 'POST' });
           const data = await res.json();
           inputSupabaseUrl.value = '';
           inputSupabaseKey.value = '';
@@ -2143,7 +2204,7 @@ CREATE INDEX IF NOT EXISTS idx_history_created_at ON public.scrape_history (crea
 ALTER TABLE public.scrape_history ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow anon read and write on scrape_history" ON public.scrape_history FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
 
--- 3. Users Table
+-- 3. Users Table (Hardened - service_role only)
 CREATE TABLE IF NOT EXISTS public.users (
     id TEXT PRIMARY KEY,
     created_at TIMESTAMPTZ DEFAULT now(),
@@ -2155,7 +2216,7 @@ CREATE TABLE IF NOT EXISTS public.users (
 );
 CREATE INDEX IF NOT EXISTS idx_users_email ON public.users (email);
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);`;
+CREATE POLICY "Strict service role only on users" ON public.users FOR ALL TO service_role USING (true) WITH CHECK (true);`;
       try {
         await navigator.clipboard.writeText(sqlSchema);
         btnCopySql.textContent = 'Copied! ✔';
@@ -2179,7 +2240,7 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
       btnSyncSupabase.innerHTML = '<span>Syncing to Supabase...</span>';
 
       try {
-        const res = await fetch('/api/supabase/sync', {
+        const res = await authFetch('/api/supabase/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ job_id: currentJobId })
@@ -2357,9 +2418,14 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
         return;
       }
       try {
-        const res = await fetch(`/api/auth/me?token=${encodeURIComponent(authToken)}`);
+        const res = await fetch('/api/auth/me', {
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'X-Session-Token': authToken
+          }
+        });
         const data = await res.json();
-        if (data.authenticated && data.user) {
+        if (res.ok && data.authenticated && data.user) {
           currentUser = data.user;
           hideAuthGate();
           updateAuthHeaderUI(currentUser);
@@ -2381,6 +2447,7 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
       if (typeof switchGateTab === 'function') switchGateTab('login');
       animateGateEntrance();
     }
+    window.leadmapShowAuthGate = showAuthGate;
 
     function hideAuthGate() {
       if (!authGateOverlay) return;
@@ -2487,18 +2554,30 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
       gateRegisterConfirm.addEventListener('input', checkPasswordMatch);
     }
 
-    // Forgot Password Form & Controls
+    // Forgot Password & Reset Token Forms & Controls
     const gateFormForgot = document.getElementById('gate-form-forgot');
     const gateForgotEmail = document.getElementById('gate-forgot-email');
-    const gateForgotNewPassword = document.getElementById('gate-forgot-new-password');
     const gateForgotFeedback = document.getElementById('gate-forgot-feedback');
     const btnGateSubmitForgot = document.getElementById('btn-gate-submit-forgot');
     const linkForgotPass = document.getElementById('link-forgot-pass');
     const linkBackToLogin = document.getElementById('link-back-to-login');
+    const linkShowResetTokenEntry = document.getElementById('link-show-reset-token-entry');
+
+    const gateFormResetToken = document.getElementById('gate-form-reset-token');
+    const gateResetTokenInput = document.getElementById('gate-reset-token-input');
+    const gateResetNewPassword = document.getElementById('gate-reset-new-password');
+    const gateResetConfirmPassword = document.getElementById('gate-reset-confirm-password');
+    const gateResetFeedback = document.getElementById('gate-reset-feedback');
+    const btnGateSubmitResetToken = document.getElementById('btn-gate-submit-reset-token');
+    const linkBackToForgot = document.getElementById('link-back-to-forgot');
+    const resetConfirmMatchError = document.getElementById('reset-confirm-match-error');
+
     const btnGoogleAuth = document.getElementById('btn-google-auth');
 
     function switchGateTab(tab) {
       if (gateFormForgot) gateFormForgot.classList.add('is-hidden');
+      if (gateFormResetToken) gateFormResetToken.classList.add('is-hidden');
+
       if (tab === 'login') {
         if (gateTabLogin) gateTabLogin.classList.add('is-active');
         if (gateTabRegister) gateTabRegister.classList.remove('is-active');
@@ -2523,12 +2602,21 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
         runAnimation(gateFormRegister, { opacity: [0, 1], translateY: [12, 0], duration: 280, ease: 'outCubic' });
       } else if (tab === 'forgot') {
         if (gateAuthTitle) gateAuthTitle.textContent = 'Reset your password';
-        if (gateAuthSub) gateAuthSub.textContent = 'Enter your work email and set a new password.';
+        if (gateAuthSub) gateAuthSub.textContent = 'Enter your work email to receive instructions.';
         gateFormLogin.classList.add('is-hidden');
         gateFormRegister.classList.add('is-hidden');
         if (gateFormForgot) {
           gateFormForgot.classList.remove('is-hidden');
           runAnimation(gateFormForgot, { opacity: [0, 1], translateY: [12, 0], duration: 280, ease: 'outCubic' });
+        }
+      } else if (tab === 'reset-token') {
+        if (gateAuthTitle) gateAuthTitle.textContent = 'Enter Reset Token';
+        if (gateAuthSub) gateAuthSub.textContent = 'Paste your single-use reset token and choose a new password.';
+        gateFormLogin.classList.add('is-hidden');
+        gateFormRegister.classList.add('is-hidden');
+        if (gateFormResetToken) {
+          gateFormResetToken.classList.remove('is-hidden');
+          runAnimation(gateFormResetToken, { opacity: [0, 1], translateY: [12, 0], duration: 280, ease: 'outCubic' });
         }
       }
     }
@@ -2550,111 +2638,116 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
       });
     }
 
-    // Toggle mode link click (Sign in <-> Create account)
-    if (btnToggleAuthMode) {
-      btnToggleAuthMode.addEventListener('click', (e) => {
+    if (linkShowResetTokenEntry) {
+      linkShowResetTokenEntry.addEventListener('click', (e) => {
         e.preventDefault();
-        const isLoginVisible = !gateFormLogin.classList.contains('is-hidden');
-        if (isLoginVisible) {
-          switchGateTab('register');
-        } else {
-          switchGateTab('login');
-        }
+        switchGateTab('reset-token');
       });
     }
 
-    // Google OAuth Handler (Sign In & Sign Up)
+    if (linkBackToForgot) {
+      linkBackToForgot.addEventListener('click', (e) => {
+        e.preventDefault();
+        switchGateTab('forgot');
+      });
+    }
+
+    // Google OAuth Notice (Disabled pending verified server-side OIDC/OAuth)
     if (btnGoogleAuth) {
-      btnGoogleAuth.addEventListener('click', async (e) => {
+      btnGoogleAuth.addEventListener('click', (e) => {
         e.preventDefault();
-        const originalText = btnGoogleAuth.querySelector('span') ? btnGoogleAuth.querySelector('span').textContent : '';
-        if (btnGoogleAuth.querySelector('span')) {
-          btnGoogleAuth.querySelector('span').textContent = 'Connecting with Google...';
-        }
-        btnGoogleAuth.disabled = true;
-
-        try {
-          // Check for prefilled email or prompt user
-          let email = gateLoginEmail && gateLoginEmail.value ? gateLoginEmail.value.trim() : '';
-          if (!email && gateRegisterEmail && gateRegisterEmail.value) {
-            email = gateRegisterEmail.value.trim();
-          }
-          if (!email) {
-            email = prompt('Enter your Google email address:', 'founder@leadmappro.io');
-          }
-          if (!email) {
-            btnGoogleAuth.disabled = false;
-            if (btnGoogleAuth.querySelector('span')) btnGoogleAuth.querySelector('span').textContent = originalText;
-            return;
-          }
-
-          const res = await fetch('/api/auth/google', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: email, name: email.split('@')[0].replace('.', ' ') })
-          });
-          const data = await res.json();
-          btnGoogleAuth.disabled = false;
-          if (btnGoogleAuth.querySelector('span')) btnGoogleAuth.querySelector('span').textContent = originalText;
-
-          if (data.success && data.token) {
-            authToken = data.token;
-            currentUser = data.user;
-            localStorage.setItem('leadmap_auth_token', authToken);
-            updateAuthHeaderUI(currentUser);
-            hideAuthGate();
-            showToast(data.message || 'Authenticated successfully with Google!', 'success');
-          } else {
-            showToast(data.error || 'Google login failed.', 'error');
-          }
-        } catch (err) {
-          btnGoogleAuth.disabled = false;
-          if (btnGoogleAuth.querySelector('span')) btnGoogleAuth.querySelector('span').textContent = originalText;
-          showToast('Failed to connect to Google authentication server.', 'error');
-        }
+        showToast('Google Sign-In is disabled until enterprise OAuth2/OIDC verification is configured. Please sign in with work email & password.', 'warning');
       });
     }
 
-    // Submit Forgot Password Form
+    // Submit Forgot Password Form (Requests single-use token; never returns token to client)
     if (gateFormForgot) {
       gateFormForgot.addEventListener('submit', async (e) => {
         e.preventDefault();
         const email = gateForgotEmail.value.trim();
-        const new_password = gateForgotNewPassword.value.trim();
-        if (!email || !new_password) return;
+        if (!email) return;
 
         btnGateSubmitForgot.disabled = true;
-        btnGateSubmitForgot.querySelector('span').textContent = 'Updating password...';
+        btnGateSubmitForgot.querySelector('span').textContent = 'Sending instructions...';
         gateForgotFeedback.classList.add('is-hidden');
 
         try {
           const res = await fetch('/api/auth/forgot-password', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, new_password })
+            body: JSON.stringify({ email })
           });
           const data = await res.json();
           btnGateSubmitForgot.disabled = false;
-          btnGateSubmitForgot.querySelector('span').textContent = 'Reset Password & Sign In →';
+          btnGateSubmitForgot.querySelector('span').textContent = 'Send Reset Instructions →';
 
-          if (data.success) {
-            showToast(data.message || 'Password reset successfully!', 'success');
-            // Populate login email and switch to login
-            if (gateLoginEmail) gateLoginEmail.value = email;
-            if (gateLoginPassword) gateLoginPassword.value = new_password;
-            switchGateTab('login');
-          } else {
-            gateForgotFeedback.className = 'status-alert status-alert-error';
-            gateForgotFeedback.textContent = data.error || 'Password reset failed.';
-            gateForgotFeedback.classList.remove('is-hidden');
-            addMicroBounce(gateForgotFeedback);
-          }
+          gateForgotFeedback.className = 'status-alert status-alert-info';
+          gateForgotFeedback.textContent = data.message || 'If an account exists with this email address, password reset instructions have been sent.';
+          gateForgotFeedback.classList.remove('is-hidden');
+          showToast('Reset instructions dispatched. Check your inbox or local outbox.', 'info');
         } catch (err) {
           btnGateSubmitForgot.disabled = false;
-          btnGateSubmitForgot.querySelector('span').textContent = 'Reset Password & Sign In →';
+          btnGateSubmitForgot.querySelector('span').textContent = 'Send Reset Instructions →';
           gateForgotFeedback.className = 'status-alert status-alert-error';
           gateForgotFeedback.textContent = err.message || 'Network error.';
           gateForgotFeedback.classList.remove('is-hidden');
+        }
+      });
+    }
+
+    // Submit Reset Password Form (Submits single-use token + new password)
+    if (gateFormResetToken) {
+      gateFormResetToken.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const token = gateResetTokenInput.value.trim();
+        const new_password = gateResetNewPassword.value.trim();
+        const confirm_password = gateResetConfirmPassword.value.trim();
+
+        if (!token) {
+          showToast('Please provide your reset token.', 'error');
+          return;
+        }
+        if (!new_password || new_password.length < 8) {
+          showToast('New password must be at least 8 characters long.', 'error');
+          return;
+        }
+        if (new_password !== confirm_password) {
+          if (resetConfirmMatchError) resetConfirmMatchError.classList.remove('is-hidden');
+          showToast('Passwords do not match.', 'error');
+          return;
+        }
+        if (resetConfirmMatchError) resetConfirmMatchError.classList.add('is-hidden');
+
+        btnGateSubmitResetToken.disabled = true;
+        btnGateSubmitResetToken.querySelector('span').textContent = 'Setting password...';
+        gateResetFeedback.classList.add('is-hidden');
+
+        try {
+          const res = await fetch('/api/auth/reset-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, new_password })
+          });
+          const data = await res.json();
+          btnGateSubmitResetToken.disabled = false;
+          btnGateSubmitResetToken.querySelector('span').textContent = 'Set New Password & Sign In →';
+
+          if (data.success) {
+            showToast('Password updated successfully! Please sign in with your new password.', 'success');
+            if (gateLoginPassword) gateLoginPassword.value = '';
+            switchGateTab('login');
+          } else {
+            gateResetFeedback.className = 'status-alert status-alert-error';
+            gateResetFeedback.textContent = data.error || 'Password reset failed.';
+            gateResetFeedback.classList.remove('is-hidden');
+            addMicroBounce(gateResetFeedback);
+          }
+        } catch (err) {
+          btnGateSubmitResetToken.disabled = false;
+          btnGateSubmitResetToken.querySelector('span').textContent = 'Set New Password & Sign In →';
+          gateResetFeedback.className = 'status-alert status-alert-error';
+          gateResetFeedback.textContent = err.message || 'Network error.';
+          gateResetFeedback.classList.remove('is-hidden');
         }
       });
     }
@@ -2681,13 +2774,21 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
           btnGateSubmitLogin.disabled = false;
           btnGateSubmitLogin.querySelector('span').textContent = 'Sign In';
 
+          if (res.status === 429) {
+            gateLoginFeedback.className = 'status-alert status-alert-error';
+            gateLoginFeedback.textContent = data.error || 'Too many failed login attempts. Please wait before trying again.';
+            gateLoginFeedback.classList.remove('is-hidden');
+            showToast(data.error || 'Too many failed login attempts.', 'error');
+            return;
+          }
+
           if (data.success && data.token) {
             authToken = data.token;
             currentUser = data.user;
             localStorage.setItem('leadmap_auth_token', authToken);
             updateAuthHeaderUI(currentUser);
             hideAuthGate();
-            showToast(data.message || `Welcome back, ${currentUser.name}!`, 'success');
+            showToast(data.message || `Welcome back, ${currentUser.name || 'User'}!`, 'success');
           } else {
             gateLoginFeedback.className = 'status-alert status-alert-error';
             gateLoginFeedback.textContent = data.error || 'Failed to sign in.';
@@ -2799,11 +2900,15 @@ CREATE POLICY "Allow anon read and write on users" ON public.users FOR ALL TO an
           if (confirm(`Sign out from ${currentUser.email}?`)) {
             fetch('/api/auth/logout', {
               method: 'POST',
-              headers: { 'Authorization': `Bearer ${authToken}` }
+              headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'X-Session-Token': authToken
+              }
             }).finally(() => {
               authToken = '';
               currentUser = null;
               localStorage.removeItem('leadmap_auth_token');
+              localStorage.removeItem('leadmap_user_profile');
               updateAuthHeaderUI(null);
               showAuthGate();
               showToast('Signed out successfully.', 'info');

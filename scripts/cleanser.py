@@ -9,9 +9,11 @@ Features:
 - Deduplication across leads based on phone, domain, or address.
 """
 import glob
+import ipaddress
 import json
 import os
 import re
+import socket
 import urllib.parse
 import urllib.request
 
@@ -341,18 +343,95 @@ _SKIP_HANDLES = {
     "groups", "marketplace", "gaming", "photo", "hashtag", "search", "pg"
 }
 
-def _fetch_site_html(url: str, timeout: int = 8) -> str:
-    """Fetch website HTML with quick timeout."""
-    if not url:
-        return ""
-    if not url.startswith(("http://", "https://")):
-        url = "http://" + url
+def is_safe_public_ip(ip_str: str) -> bool:
+    """Verify that an IP address is public and routable, blocking loopback, private, link-local, and cloud metadata."""
     try:
-        req = urllib.request.Request(url, headers={
+        ip = ipaddress.ip_address(ip_str)
+        if (ip.is_private or ip.is_loopback or ip.is_link_local or
+            ip.is_multicast or ip.is_reserved or ip.is_unspecified):
+            return False
+        # Explicit cloud metadata check (AWS/GCP/Azure link-local metadata)
+        if str(ip) == "169.254.169.254":
+            return False
+        return True
+    except (ValueError, TypeError):
+        return False
+
+def validate_url_for_ssrf(url: str) -> tuple:
+    """Validate URL scheme and ensure all resolved DNS IPs are public.
+    
+    Returns (is_safe: bool, error_reason: str, normalized_url: str).
+    """
+    if not url or not isinstance(url, str):
+        return False, "Empty URL", ""
+    
+    raw = url.strip()
+    if not raw:
+        return False, "Empty URL", ""
+
+    # Detect non-http schemes before adding http://
+    parsed_check = urllib.parse.urlparse(raw)
+    scheme = parsed_check.scheme.lower()
+    if scheme and scheme not in ("http", "https"):
+        return False, f"Disallowed scheme: {scheme}", ""
+
+    if not raw.startswith(("http://", "https://")):
+        raw = "http://" + raw
+
+    try:
+        parsed = urllib.parse.urlparse(raw)
+    except Exception as e:
+        return False, f"Invalid URL: {e}", ""
+
+    if parsed.scheme.lower() not in ("http", "https"):
+        return False, f"Disallowed scheme: {parsed.scheme}", ""
+
+    hostname = parsed.hostname
+    if not hostname:
+        return False, "Missing hostname", ""
+
+    # Immediate rejection of known loopback/local names
+    clean_host = hostname.strip().lower()
+    if clean_host in ("localhost", "localhost.localdomain") or clean_host.endswith(".localhost"):
+        return False, "Localhost addresses are blocked", ""
+
+    # Pre-flight DNS resolution to check all resolved target IPs
+    port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
+    try:
+        addr_info = socket.getaddrinfo(clean_host, port, proto=socket.IPPROTO_TCP)
+        if not addr_info:
+            return False, f"DNS resolution failed for {clean_host}", ""
+        for item in addr_info:
+            sockaddr = item[4]
+            ip_str = sockaddr[0]
+            if not is_safe_public_ip(ip_str):
+                return False, f"Resolved destination IP {ip_str} is non-public or restricted", ""
+    except Exception as e:
+        return False, f"DNS resolution failed for {clean_host}: {e}", ""
+
+    return True, "", raw
+
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Intercept HTTP redirects to ensure redirect destinations do not bypass SSRF checks."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        is_safe, reason, normalized_url = validate_url_for_ssrf(newurl)
+        if not is_safe:
+            return None  # Aborts redirect to private or loopback destination
+        return super().redirect_request(req, fp, code, msg, headers, normalized_url)
+
+_safe_opener = urllib.request.build_opener(SafeRedirectHandler)
+
+def _fetch_site_html(url: str, timeout: int = 8) -> str:
+    """Safely fetch website HTML with SSRF defense, redirect validation, and byte limits."""
+    is_safe, reason, safe_url = validate_url_for_ssrf(url)
+    if not is_safe:
+        return ""
+    try:
+        req = urllib.request.Request(safe_url, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml"
         })
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _safe_opener.open(req, timeout=timeout) as resp:
             return resp.read(300_000).decode("utf-8", "replace")
     except Exception:
         return ""
@@ -519,4 +598,30 @@ def filter_previously_seen_leads(leads: list, historical_leads: list) -> tuple:
             if ident and ident != "|": seen_idents.add(ident)
 
     return new_leads, skipped_leads
+
+
+def sanitize_csv_cell(val):
+    """Sanitize CSV cell content to protect against spreadsheet formula injection."""
+    if val is None:
+        return ""
+    if isinstance(val, (int, float)):
+        return val
+    val_str = str(val)
+    stripped = val_str.lstrip()
+    if not stripped:
+        return val_str
+    if stripped[0] in ("=", "@", "\t", "\r"):
+        return "'" + val_str
+    if stripped[0] in ("+", "-"):
+        try:
+            float(stripped)
+            return val_str
+        except ValueError:
+            return "'" + val_str
+    return val_str
+
+
+def sanitize_csv_row(row_dict: dict) -> dict:
+    """Return a new dictionary with all string fields sanitized against CSV injection."""
+    return {k: sanitize_csv_cell(v) for k, v in row_dict.items()}
 
