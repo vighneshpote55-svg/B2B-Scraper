@@ -278,17 +278,26 @@ class TelegramClient:
         self.token = token
         self.base_url = f"{api_base}/bot{token}"
 
-    def get_me(self) -> dict:
-        """Call getMe endpoint to verify token."""
+    def get_me(self, retries: int = 3) -> dict:
+        """Call getMe endpoint to verify token with auto-retry on transient connection drops."""
         url = f"{self.base_url}/getMe"
         req = urllib.request.Request(url, headers={"User-Agent": "LeadMap-Pro-Bot/1.0"})
-        try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            return {"ok": False, "description": f"HTTP {e.code}: {e.read().decode('utf-8', 'replace')}"}
-        except Exception as e:
-            return {"ok": False, "description": sanitize_error_message(e)}
+        last_err = None
+        for attempt in range(retries):
+            try:
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as e:
+                return {"ok": False, "description": f"HTTP {e.code}: {e.read().decode('utf-8', 'replace')}"}
+            except (ConnectionResetError, urllib.error.URLError, OSError) as e:
+                last_err = e
+                if attempt < retries - 1:
+                    time.sleep(1.5)
+                    continue
+                return {"ok": False, "description": sanitize_error_message(e)}
+            except Exception as e:
+                return {"ok": False, "description": sanitize_error_message(e)}
+        return {"ok": False, "description": sanitize_error_message(last_err or Exception("Connection failed"))}
 
     def get_updates(self, offset: int = None, timeout: int = 20) -> list:
         """Poll for new updates using long-polling."""
@@ -861,8 +870,14 @@ def run_bot_polling(stop_event: threading.Event = None):
         return
 
     allowed = get_allowed_user_ids()
+    raw_allowed = os.environ.get("TELEGRAM_ALLOWED_USER_IDS", "").strip()
     if not allowed:
-        print("⚠️ Security Notice: TELEGRAM_ALLOWED_USER_IDS is empty. All incoming messages will be rejected.", file=sys.stderr)
+        if raw_allowed:
+            print(f"⚠️ Security Notice: TELEGRAM_ALLOWED_USER_IDS='{raw_allowed}' contains no numeric user IDs.", file=sys.stderr)
+            print("   Note: This must be your personal numeric Telegram user ID (from @userinfobot), NOT the bot username.", file=sys.stderr)
+            print("   All incoming messages will be rejected until a numeric ID is configured in .env.", file=sys.stderr)
+        else:
+            print("⚠️ Security Notice: TELEGRAM_ALLOWED_USER_IDS is empty. All incoming messages will be rejected.", file=sys.stderr)
     else:
         print(f"🔒 Bot authorized strictly for Telegram numeric user IDs: {allowed}")
 
