@@ -95,8 +95,9 @@
   const progressSubtext = document.getElementById('progress-subtext');
   const progressTimer = document.getElementById('progress-timer');
   const progressPctBadge = document.getElementById('progress-pct-badge');
-  const progressBarFill = document.getElementById('progress-bar-fill');
   const btnCancelScrape = document.getElementById('btn-cancel-scrape');
+  const btnRetryScrape = document.getElementById('btn-retry-scrape');
+  let lastScrapePayload = null;
 
   // KPI Metrics
   const metricTotal = document.getElementById('metric-total');
@@ -205,6 +206,7 @@
   const btnBulkCopyPhones = document.getElementById('btn-bulk-copy-phones');
   const btnBulkSyncSupabase = document.getElementById('btn-bulk-sync-supabase');
   const btnBulkExportCsv = document.getElementById('btn-bulk-export-csv');
+  const btnBulkRemove = document.getElementById('btn-bulk-remove');
   const btnBulkClear = document.getElementById('btn-bulk-clear');
 
   // Theme Toggle
@@ -724,6 +726,16 @@
         }
       });
     }
+
+    // Retry Scrape Button
+    if (btnRetryScrape) {
+      btnRetryScrape.addEventListener('click', () => {
+        addMicroBounce(btnRetryScrape);
+        if (lastScrapePayload) {
+          startScrape(lastScrapePayload);
+        }
+      });
+    }
   }
 
   // Start Scrape
@@ -751,6 +763,10 @@
     scrapeStartTime = Date.now();
     startElapsedTimer();
 
+    lastScrapePayload = payload;
+    if (btnRetryScrape) btnRetryScrape.classList.add('is-hidden');
+    if (btnCancelScrape) btnCancelScrape.classList.remove('is-hidden');
+
     try {
       const res = await authFetch('/api/scrape/start', {
         method: 'POST',
@@ -760,6 +776,15 @@
 
       const data = await res.json();
       if (!res.ok) {
+        if (res.status === 429) {
+          progressStageTitle.textContent = 'Server at Capacity (2/2 Active)';
+          progressSubtext.textContent = data.error || 'System is processing maximum concurrent jobs. Click Retry when ready.';
+          if (btnRetryScrape) btnRetryScrape.classList.remove('is-hidden');
+          if (btnCancelScrape) btnCancelScrape.classList.add('is-hidden');
+          stopScrapingState();
+          showToast('Server is busy with active jobs. Click Retry in a moment.', 'info');
+          return;
+        }
         throw new Error(data.error || 'Failed to start extraction');
       }
 
@@ -769,6 +794,10 @@
 
     } catch (err) {
       stopScrapingState();
+      progressStageTitle.textContent = 'Extraction Request Failed';
+      progressSubtext.textContent = err.message;
+      if (btnRetryScrape) btnRetryScrape.classList.remove('is-hidden');
+      if (btnCancelScrape) btnCancelScrape.classList.add('is-hidden');
       showToast(`Error: ${err.message}`, 'error');
     }
   }
@@ -841,9 +870,12 @@
           clearInterval(elapsedTimer);
           stopScrapingState();
           loadOverviewData(false);
-          showToast(job.error || 'Job failed. Google may be temporarily throttling.', 'error');
+          const errDetail = job.error || 'Job failed. Google may be temporarily throttling.';
+          showToast(errDetail, 'error');
           progressStageTitle.textContent = 'Job Failed';
-          progressSubtext.textContent = job.error || 'Check Docker scraper logs.';
+          progressSubtext.textContent = errDetail;
+          if (btnRetryScrape) btnRetryScrape.classList.remove('is-hidden');
+          if (btnCancelScrape) btnCancelScrape.classList.add('is-hidden');
         }
       } catch (err) {
         console.error('Poll error:', err);
@@ -1763,6 +1795,22 @@ Lead Partnerships Team`;
         }
         downloadSelectedLeadsCsv(selected);
         showToast(`Exported ${selected.length} selected leads to CSV!`, 'success');
+      });
+    }
+
+    if (btnBulkRemove) {
+      btnBulkRemove.addEventListener('click', () => {
+        addMicroBounce(btnBulkRemove);
+        const count = selectedLeadIndices.size;
+        if (count === 0) {
+          showToast('No leads selected to remove.', 'error');
+          return;
+        }
+        allLeads = allLeads.filter((_, idx) => !selectedLeadIndices.has(idx));
+        selectedLeadIndices.clear();
+        updateBulkBar();
+        renderTable();
+        showToast(`Removed ${count} leads from view.`, 'info');
       });
     }
   }

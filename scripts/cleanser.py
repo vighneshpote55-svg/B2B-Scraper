@@ -16,6 +16,7 @@ import os
 import re
 import socket
 import ssl
+import time
 import urllib.parse
 import urllib.request
 
@@ -775,11 +776,25 @@ def enrich_socials(leads: list, max_workers: int = 6) -> list:
     return leads
 
 
-def load_historical_leads(data_dir: str, exclude_job_id: str = "") -> list:
-    """Load all leads from past scrape JSON files in data_dir."""
+LEAD_STALENESS_DAYS = int(os.environ.get("LEAD_STALENESS_DAYS", 90))
+
+
+def load_historical_leads(data_dir: str, exclude_job_id: str = "", user_id: str = None, max_age_days: int = None) -> list:
+    """Load leads from past scrape JSON files in data_dir.
+
+    Filters by user_id if provided to enforce cross-user isolation.
+    Excludes records older than max_age_days (default: LEAD_STALENESS_DAYS) to allow
+    re-scraping stale records.
+    """
     historical = []
     if not data_dir or not os.path.isdir(data_dir):
         return historical
+
+    if max_age_days is None:
+        max_age_days = LEAD_STALENESS_DAYS
+
+    now = time.time()
+    cutoff = (now - (max_age_days * 86400)) if (max_age_days and max_age_days > 0) else None
 
     for filepath in glob.glob(os.path.join(data_dir, "leads_*.json")):
         filename = os.path.basename(filepath)
@@ -789,9 +804,22 @@ def load_historical_leads(data_dir: str, exclude_job_id: str = "") -> list:
         try:
             with open(filepath, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                leads = data.get("leads", [])
-                if isinstance(leads, list):
-                    historical.extend(leads)
+
+            # Filter by user_id if provided to avoid cross-user deduplication leakage
+            if user_id:
+                file_user_id = data.get("user_id") or data.get("params", {}).get("user_id")
+                if file_user_id and file_user_id != user_id:
+                    continue
+
+            # Check staleness cutoff
+            if cutoff:
+                completed_at = data.get("completed_at") or data.get("updated_at") or os.path.getmtime(filepath)
+                if completed_at < cutoff:
+                    continue  # Stale lead record: allow re-scraping to refresh data
+
+            leads = data.get("leads", [])
+            if isinstance(leads, list):
+                historical.extend(leads)
         except Exception:
             continue
     return historical

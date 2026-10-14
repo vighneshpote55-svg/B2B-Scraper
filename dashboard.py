@@ -13,8 +13,10 @@ import hashlib
 import hmac
 import io
 import json
+import logging
 import os
 import re
+import resource
 import secrets
 import socketserver
 import subprocess
@@ -26,6 +28,33 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+SERVER_START_TIME = time.time()
+
+class SecretRedactionFilter(logging.Filter):
+    """Filter that scrubs credentials, tokens, and passwords from log records."""
+    PATTERNS = [
+        (re.compile(r'(Bearer\s+)[A-Za-z0-9_\-\.]{8,}', re.IGNORECASE), r'\1[REDACTED_TOKEN]'),
+        (re.compile(r'(["\']?(?:password|token|secret|apiKey|api_key)["\']?\s*[:=]\s*["\'])([^"\']+)(["\'])', re.IGNORECASE), r'\1[REDACTED]\3'),
+        (re.compile(r'(eyJ[A-Za-z0-9_\-]{15,}\.[A-Za-z0-9_\-]{15,}\.[A-Za-z0-9_\-]*)'), r'[REDACTED_JWT]'),
+        (re.compile(r'(reset_token=)[a-f0-9]{16,}', re.IGNORECASE), r'\1[REDACTED_TOKEN]'),
+    ]
+
+    def filter(self, record):
+        if isinstance(record.msg, str):
+            msg = record.msg
+            for pattern, repl in self.PATTERNS:
+                msg = pattern.sub(repl, msg)
+            record.msg = msg
+        return True
+
+logger = logging.getLogger("leadmap")
+if not logger.handlers:
+    _handler = logging.StreamHandler(sys.stdout)
+    _handler.setFormatter(logging.Formatter("[%(asctime)s] [%(levelname)s] [leadmap] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+    _handler.addFilter(SecretRedactionFilter())
+    logger.addHandler(_handler)
+    logger.setLevel(logging.INFO)
 
 # Load .env
 _env_path = os.path.join(os.path.dirname(__file__), ".env")
@@ -56,6 +85,16 @@ LOGIN_LOCKOUT_WINDOW = int(os.environ.get("LOGIN_LOCKOUT_WINDOW_SECONDS", 300)) 
 LOGIN_ATTEMPTS = {}
 LOGIN_ATTEMPTS_LOCK = threading.Lock()
 RESETS_LOCK = threading.Lock()
+
+# Phase 2: Reliability & Concurrency Controls
+MAX_CONCURRENT_JOBS = int(os.environ.get("MAX_CONCURRENT_JOBS", 2))
+JOB_TIMEOUT_SECONDS = int(os.environ.get("JOB_TIMEOUT_SECONDS", 600))
+JOB_RETENTION_DAYS = int(os.environ.get("JOB_RETENTION_DAYS", 30))
+MAX_COMPLETED_JOBS = int(os.environ.get("MAX_COMPLETED_JOBS", 100))
+JOB_ADMISSION_LOCK = threading.RLock()
+PROCESS_LOCK = threading.Lock()
+JOB_PROCESSES = {}  # job_id -> set of subprocess.Popen instances
+
 os.makedirs(DATA_DIR, exist_ok=True)
 
 DEFAULT_ALLOWED_ORIGINS = {
@@ -125,6 +164,285 @@ def _atomic_json_write(filepath, data):
             except OSError:
                 pass
         raise
+
+def _register_job_process(job_id: str, proc):
+    """Register an active child subprocess for a specific scraping job."""
+    if not job_id or not proc:
+        return
+    with PROCESS_LOCK:
+        if job_id not in JOB_PROCESSES:
+            JOB_PROCESSES[job_id] = set()
+        JOB_PROCESSES[job_id].add(proc)
+
+def _unregister_job_process(job_id: str, proc):
+    """Unregister a finished child subprocess for a specific scraping job."""
+    if not job_id or not proc:
+        return
+    with PROCESS_LOCK:
+        if job_id in JOB_PROCESSES:
+            JOB_PROCESSES[job_id].discard(proc)
+            if not JOB_PROCESSES[job_id]:
+                JOB_PROCESSES.pop(job_id, None)
+
+def _terminate_job_processes(job_id: str, grace_timeout: float = 5.0):
+    """Safely terminate child subprocesses belonging exclusively to job_id.
+
+    Applies graceful SIGTERM first, waits up to grace_timeout seconds,
+    then issues SIGKILL if the process fails to terminate.
+    """
+    if not job_id:
+        return
+    with PROCESS_LOCK:
+        procs = list(JOB_PROCESSES.pop(job_id, set()))
+
+    for p in procs:
+        try:
+            if hasattr(p, "poll") and p.poll() is None:
+                p.terminate()
+        except OSError:
+            pass
+
+    deadline = time.time() + grace_timeout
+    for p in procs:
+        try:
+            rem = max(0.1, deadline - time.time())
+            if hasattr(p, "wait"):
+                p.wait(timeout=rem)
+        except Exception:
+            try:
+                if hasattr(p, "poll") and p.poll() is None:
+                    if hasattr(p, "kill"):
+                        p.kill()
+                    if hasattr(p, "wait"):
+                        p.wait(timeout=1.0)
+            except Exception:
+                pass
+
+def _create_durable_job(job_id: str, user_id: str, user_email: str, params: dict):
+    """Initialize a durable job record on disk and in memory with 'working' status."""
+    now = time.time()
+    safe_params = {
+        k: v for k, v in (params or {}).items()
+        if not re.search(r'(token|secret|password|auth|credential|api_?key|^key$|_key$|^key_)', str(k), re.IGNORECASE)
+    }
+    record = {
+        "id": job_id,
+        "job_id": job_id,
+        "user_id": user_id,
+        "user_email": user_email,
+        "status": "working",
+        "stage": "Job admitted and initialized...",
+        "progress_percent": 5,
+        "created_at": now,
+        "updated_at": now,
+        "started_at": now,
+        "completed_at": None,
+        "params": safe_params,
+        "leads": [],
+        "metrics": {"total": 0},
+        "error": None
+    }
+    with JOB_LOCK:
+        JOB_CACHE[job_id] = dict(record)
+
+    data_file = _get_job_file_path(job_id)
+    if data_file:
+        _atomic_json_write(data_file, record)
+    return record
+
+def _update_durable_job(job_id: str, updates: dict):
+    """Atomically update job state in memory and persisted disk record."""
+    now = time.time()
+    data_file = _get_job_file_path(job_id)
+    with JOB_LOCK:
+        if job_id in JOB_CACHE:
+            JOB_CACHE[job_id].update(updates)
+            JOB_CACHE[job_id]["updated_at"] = now
+            current_record = dict(JOB_CACHE[job_id])
+        else:
+            current_record = None
+
+    if data_file and os.path.isfile(data_file):
+        try:
+            with open(data_file, "r", encoding="utf-8") as f:
+                disk_data = json.load(f)
+            disk_data.update(updates)
+            disk_data["updated_at"] = now
+            _atomic_json_write(data_file, disk_data)
+        except Exception as e:
+            print(f"[durable job update error] {e}", file=sys.stderr)
+    elif data_file and current_record:
+        try:
+            _atomic_json_write(data_file, current_record)
+        except Exception as e:
+            print(f"[durable job write error] {e}", file=sys.stderr)
+
+def _get_active_job_count():
+    """Return the number of currently active/working jobs across memory and disk."""
+    active_ids = set()
+    with JOB_LOCK:
+        for jid, job in JOB_CACHE.items():
+            if job.get("status") in ("working", "starting", "running", "stopping"):
+                active_ids.add(jid)
+
+    if os.path.isdir(DATA_DIR):
+        try:
+            for fn in os.listdir(DATA_DIR):
+                if fn.startswith("leads_") and fn.endswith(".json"):
+                    jid = fn[6:-5]
+                    if jid not in active_ids:
+                        fp = os.path.join(DATA_DIR, fn)
+                        try:
+                            with open(fp, "r", encoding="utf-8") as f:
+                                d = json.load(f)
+                                if d.get("status") in ("working", "starting", "running", "stopping"):
+                                    active_ids.add(jid)
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+    return len(active_ids)
+
+def recover_interrupted_jobs(data_dir=DATA_DIR):
+    """Detect jobs left in an unfinished state by a previous process and mark as failed.
+
+    Idempotent across repeated executions.
+    """
+    if not os.path.isdir(data_dir):
+        return 0
+    interrupted_count = 0
+    now = time.time()
+    try:
+        filenames = os.listdir(data_dir)
+    except OSError:
+        return 0
+
+    for fn in filenames:
+        if fn.startswith("leads_") and fn.endswith(".json"):
+            fp = os.path.join(data_dir, fn)
+            try:
+                with open(fp, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+            except Exception:
+                continue
+
+            status = d.get("status")
+            if status in ("working", "starting", "running", "stopping"):
+                d["status"] = "failed"
+                d["stage"] = "Interrupted by system restart or shutdown."
+                d["error"] = "Job was interrupted before completion."
+                d["updated_at"] = now
+                if not d.get("completed_at"):
+                    d["completed_at"] = now
+                try:
+                    _atomic_json_write(fp, d)
+                    interrupted_count += 1
+                except Exception as e:
+                    print(f"[recovery write error] {e}", file=sys.stderr)
+
+                jid = d.get("job_id") or fn[6:-5]
+                with JOB_LOCK:
+                    if jid in JOB_CACHE:
+                        JOB_CACHE[jid].update({
+                            "status": "failed",
+                            "stage": d["stage"],
+                            "error": d["error"],
+                            "updated_at": now,
+                            "completed_at": now
+                        })
+    return interrupted_count
+
+def cleanup_stale_jobs_and_temp_files(data_dir=DATA_DIR, retention_days=JOB_RETENTION_DAYS, max_jobs=MAX_COMPLETED_JOBS):
+    """Prune completed/failed/cancelled jobs older than retention_days or beyond max_jobs.
+
+    Guarantees active jobs are NEVER deleted.
+    Cleans orphaned temporary files (.tmp_*) older than 1 hour.
+    """
+    if not os.path.isdir(data_dir):
+        return {"pruned_jobs": 0, "pruned_temps": 0}
+
+    now = time.time()
+    retention_cutoff = now - (retention_days * 86400)
+    temp_cutoff = now - 3600  # 1 hour
+
+    pruned_jobs = 0
+    pruned_temps = 0
+
+    # 1. Clean orphaned temporary files
+    try:
+        for fn in os.listdir(data_dir):
+            fp = os.path.join(data_dir, fn)
+            if fn.startswith(".tmp_") or fn.startswith("tmp_"):
+                try:
+                    mtime = os.path.getmtime(fp)
+                    if mtime < temp_cutoff:
+                        os.remove(fp)
+                        pruned_temps += 1
+                except OSError:
+                    pass
+    except OSError:
+        pass
+
+    # 2. Inspect leads files
+    try:
+        filenames = os.listdir(data_dir)
+    except OSError:
+        return {"pruned_jobs": 0, "pruned_temps": pruned_temps}
+
+    completed_jobs = []
+    for fn in filenames:
+        if fn.startswith("leads_") and fn.endswith(".json"):
+            fp = os.path.join(data_dir, fn)
+            jid = fn[6:-5]
+
+            # Check if active in memory
+            with JOB_LOCK:
+                mem_job = JOB_CACHE.get(jid)
+                if mem_job and mem_job.get("status") in ("working", "starting", "running", "stopping"):
+                    continue
+
+            try:
+                with open(fp, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+            except Exception:
+                continue
+
+            status = d.get("status")
+            if status in ("working", "starting", "running", "stopping"):
+                continue
+
+            completed_at = d.get("completed_at") or d.get("updated_at") or os.path.getmtime(fp)
+            completed_jobs.append((fp, jid, completed_at))
+
+    # 3. Prune jobs older than retention_cutoff
+    remaining_jobs = []
+    for fp, jid, comp_time in completed_jobs:
+        if comp_time < retention_cutoff:
+            try:
+                os.remove(fp)
+                with JOB_LOCK:
+                    JOB_CACHE.pop(jid, None)
+                pruned_jobs += 1
+            except OSError:
+                remaining_jobs.append((fp, jid, comp_time))
+        else:
+            remaining_jobs.append((fp, jid, comp_time))
+
+    # 4. Prune excess if total completed jobs exceed max_jobs
+    if len(remaining_jobs) > max_jobs:
+        remaining_jobs.sort(key=lambda x: x[2])  # oldest first
+        excess = len(remaining_jobs) - max_jobs
+        for i in range(excess):
+            fp, jid, _ = remaining_jobs[i]
+            try:
+                os.remove(fp)
+                with JOB_LOCK:
+                    JOB_CACHE.pop(jid, None)
+                pruned_jobs += 1
+            except OSError:
+                pass
+
+    return {"pruned_jobs": pruned_jobs, "pruned_temps": pruned_temps}
 
 def _check_login_rate_limit(client_ip, email):
     """Check if client IP or email has exceeded max failed login attempts."""
@@ -520,80 +838,96 @@ def check_scraper_health():
 
 def background_job_processor(job_id, params):
     """Background worker that polls job until complete, cleanses, enriches, and stores leads."""
-    with JOB_LOCK:
-        JOB_CACHE[job_id] = {
-            "id": job_id,
+    try:
+        _update_durable_job(job_id, {
             "status": "working",
             "progress_percent": 15,
             "stage": "Scraping Google Maps listings...",
             "started_at": time.time(),
             "leads": [],
-            "params": params,
-            "user_id": params.get("user_id"),
-            "user_email": params.get("user_email"),
             "error": None
-        }
+        })
 
-    # Poll scraper service
-    max_wait = params.get("max_time", 600)
-    start_time = time.time()
-    completed = False
+        # Poll scraper service
+        max_wait = params.get("max_time", JOB_TIMEOUT_SECONDS)
+        start_time = time.time()
+        completed = False
 
-    while time.time() - start_time < max_wait:
-        with JOB_LOCK:
-            if JOB_CACHE.get(job_id, {}).get("cancel_requested"):
-                JOB_CACHE[job_id]["status"] = "cancelled"
-                JOB_CACHE[job_id]["stage"] = "Extraction cancelled by user."
-                return
+        while time.time() - start_time < max_wait:
+            with JOB_LOCK:
+                if JOB_CACHE.get(job_id, {}).get("cancel_requested"):
+                    _update_durable_job(job_id, {
+                        "status": "cancelled",
+                        "stage": "Extraction cancelled by user.",
+                        "completed_at": time.time(),
+                        "error": "Cancelled by user"
+                    })
+                    return
+
+            try:
+                _, raw = scraper_req("GET", f"/api/v1/jobs/{job_id}", timeout=10)
+                res = json.loads(raw.decode())
+                status = res.get("Status")
+
+                elapsed = int(time.time() - start_time)
+                # Estimate progress based on elapsed time (up to 85% during wait)
+                progress = min(85, 15 + int(elapsed * 2))
+
+                _update_durable_job(job_id, {
+                    "status": status if status in ("ok", "failed") else "working",
+                    "progress_percent": progress,
+                    "stage": f"Scraping listings on Google Maps ({elapsed}s elapsed)..."
+                })
+
+                if status == "ok":
+                    completed = True
+                    break
+                elif status == "failed":
+                    _update_durable_job(job_id, {
+                        "status": "failed",
+                        "stage": "Scraper service failed",
+                        "error": "Scraper service returned failed status. IP may be temporarily throttled.",
+                        "completed_at": time.time()
+                    })
+                    return
+            except Exception as e:
+                print(f"[poll error] {e}")
+
+            time.sleep(4)
+
+        if not completed:
+            _update_durable_job(job_id, {
+                "status": "failed",
+                "stage": "Job timed out",
+                "error": "Job timed out waiting for scraper completion.",
+                "completed_at": time.time()
+            })
+            return
+
+        # Download CSV
+        _update_durable_job(job_id, {
+            "stage": "Downloading and parsing listings...",
+            "progress_percent": 90
+        })
 
         try:
-            _, raw = scraper_req("GET", f"/api/v1/jobs/{job_id}", timeout=10)
-            res = json.loads(raw.decode())
-            status = res.get("Status")
-
-            elapsed = int(time.time() - start_time)
-            # Estimate progress based on elapsed time (up to 85% during wait)
-            progress = min(85, 15 + int(elapsed * 2))
-
-            with JOB_LOCK:
-                if job_id in JOB_CACHE:
-                    JOB_CACHE[job_id]["status"] = status
-                    JOB_CACHE[job_id]["progress_percent"] = progress
-                    JOB_CACHE[job_id]["stage"] = f"Scraping listings on Google Maps ({elapsed}s elapsed)..."
-
-            if status == "ok":
-                completed = True
-                break
-            elif status == "failed":
-                with JOB_LOCK:
-                    JOB_CACHE[job_id]["status"] = "failed"
-                    JOB_CACHE[job_id]["error"] = "Scraper service returned failed status. IP may be temporarily throttled."
-                return
-        except Exception as e:
-            print(f"[poll error] {e}")
-
-        time.sleep(4)
-
-    if not completed:
-        with JOB_LOCK:
-            JOB_CACHE[job_id]["status"] = "failed"
-            JOB_CACHE[job_id]["error"] = "Job timed out waiting for scraper completion."
-        return
-
-    # Download CSV
-    with JOB_LOCK:
-        JOB_CACHE[job_id]["stage"] = "Downloading and parsing listings..."
-        JOB_CACHE[job_id]["progress_percent"] = 90
-
-    try:
-        _, raw_csv = scraper_req("GET", f"/api/v1/jobs/{job_id}/download", timeout=60)
-        csv_text = raw_csv.decode("utf-8", "replace")
-        rows = list(csv.DictReader(io.StringIO(csv_text)))
+            _, raw_csv = scraper_req("GET", f"/api/v1/jobs/{job_id}/download", timeout=60)
+            csv_text = raw_csv.decode("utf-8", "replace")
+            rows = list(csv.DictReader(io.StringIO(csv_text)))
+        except Exception as dl_err:
+            _update_durable_job(job_id, {
+                "status": "failed",
+                "stage": "Download failed",
+                "error": f"Failed to download scrape results: {str(dl_err)[:200]}",
+                "completed_at": time.time()
+            })
+            return
 
         # Cleanse and score
-        with JOB_LOCK:
-            JOB_CACHE[job_id]["stage"] = "Cleansing emails, formatting phones, and calculating lead scores..."
-            JOB_CACHE[job_id]["progress_percent"] = 95
+        _update_durable_job(job_id, {
+            "stage": "Cleansing emails, formatting phones, and calculating lead scores...",
+            "progress_percent": 95
+        })
 
         cleaned_leads = []
         for r in rows:
@@ -622,37 +956,23 @@ def background_job_processor(job_id, params):
 
         # Cross-job historical deduplication
         exclude_seen = params.get("exclude_seen", True)
+        job_user_id = params.get("user_id")
         skipped_previous = []
         if exclude_seen:
-            historical_leads = load_historical_leads(DATA_DIR, exclude_job_id=job_id)
+            historical_leads = load_historical_leads(DATA_DIR, exclude_job_id=job_id, user_id=job_user_id)
             new_leads, skipped_previous = filter_previously_seen_leads(cleaned_leads, historical_leads)
             cleaned_leads = new_leads
         else:
-            historical_leads = load_historical_leads(DATA_DIR, exclude_job_id=job_id)
+            historical_leads = load_historical_leads(DATA_DIR, exclude_job_id=job_id, user_id=job_user_id)
             _, skipped_previous = filter_previously_seen_leads(cleaned_leads, historical_leads)
 
         # Enrich social profiles (Instagram / Facebook / LinkedIn) from websites
         if params.get("socials", True) and cleaned_leads:
-            with JOB_LOCK:
-                JOB_CACHE[job_id]["stage"] = "Scanning websites for Instagram, Facebook, and LinkedIn profiles..."
-                JOB_CACHE[job_id]["progress_percent"] = 96
+            _update_durable_job(job_id, {
+                "stage": "Scanning websites for Instagram, Facebook, and LinkedIn profiles...",
+                "progress_percent": 96
+            })
             cleaned_leads = enrich_socials(cleaned_leads)
-
-        # Save to data directory atomically with owner tagging
-        data_file = os.path.join(DATA_DIR, f"leads_{job_id}.json")
-        _atomic_json_write(data_file, {
-            "job_id": job_id,
-            "user_id": params.get("user_id"),
-            "params": params,
-            "completed_at": time.time(),
-            "leads": cleaned_leads,
-            "skipped_previous_count": len(skipped_previous),
-            "metrics": {
-                "total": len(cleaned_leads),
-                "skipped_previous": len(skipped_previous),
-                "raw_extracted": len(cleaned_leads) + len(skipped_previous)
-            }
-        })
 
         # Count metrics
         hot_cnt = sum(1 for l in cleaned_leads if l.get("lead_tier") == "HOT")
@@ -665,8 +985,9 @@ def background_job_processor(job_id, params):
         supabase_synced = 0
         if is_supabase_configured() and os.environ.get("SUPABASE_AUTO_SYNC", "true").lower() == "true":
             try:
-                with JOB_LOCK:
-                    JOB_CACHE[job_id]["stage"] = "Syncing qualified leads and history to Supabase Cloud..."
+                _update_durable_job(job_id, {
+                    "stage": "Syncing qualified leads and history to Supabase Cloud..."
+                })
                 sync_res = sync_supabase_leads(cleaned_leads, job_id=job_id)
                 if sync_res.get("success"):
                     supabase_synced = sync_res.get("count", 0)
@@ -707,30 +1028,41 @@ def background_job_processor(job_id, params):
         if supabase_synced:
             stage_desc += f" ({supabase_synced} synced to Supabase)"
 
-        with JOB_LOCK:
-            JOB_CACHE[job_id].update({
-                "status": "ok",
-                "progress_percent": 100,
-                "stage": stage_desc,
-                "leads": cleaned_leads,
-                "skipped_previous_count": len(skipped_previous),
-                "metrics": {
-                    "total": len(cleaned_leads),
-                    "hot": hot_cnt,
-                    "warm": warm_cnt,
-                    "cold": cold_cnt,
-                    "with_email": email_cnt,
-                    "with_phone": phone_cnt,
-                    "supabase_synced": supabase_synced,
-                    "skipped_previous": len(skipped_previous),
-                    "raw_extracted": len(cleaned_leads) + len(skipped_previous)
-                }
-            })
+        metrics = {
+            "total": len(cleaned_leads),
+            "hot": hot_cnt,
+            "warm": warm_cnt,
+            "cold": cold_cnt,
+            "with_email": email_cnt,
+            "with_phone": phone_cnt,
+            "supabase_synced": supabase_synced,
+            "skipped_previous": len(skipped_previous),
+            "raw_extracted": len(cleaned_leads) + len(skipped_previous)
+        }
+
+        _update_durable_job(job_id, {
+            "status": "ok",
+            "progress_percent": 100,
+            "stage": stage_desc,
+            "completed_at": time.time(),
+            "leads": cleaned_leads,
+            "skipped_previous_count": len(skipped_previous),
+            "metrics": metrics,
+            "error": None
+        })
 
     except Exception as e:
-        with JOB_LOCK:
-            JOB_CACHE[job_id]["status"] = "failed"
-            JOB_CACHE[job_id]["error"] = f"Processing error: {str(e)}"
+        safe_err = f"Processing error: {str(e)[:200]}"
+        print(f"[background processor unhandled error] {e}", file=sys.stderr)
+        _update_durable_job(job_id, {
+            "status": "failed",
+            "stage": "Processing error",
+            "completed_at": time.time(),
+            "error": safe_err
+        })
+    finally:
+        # Safe termination of any registered subprocesses for this job
+        _terminate_job_processes(job_id)
 
 
 class DashboardRequestHandler(SimpleHTTPRequestHandler):
@@ -884,7 +1216,46 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                 "scraper_up": is_healthy,
                 "scraper_base": SCRAPER_BASE,
                 "dashboard_port": PORT,
-                "active_jobs_count": len([j for j in JOB_CACHE.values() if j.get("status") == "working"])
+                "active_jobs_count": _get_active_job_count(),
+                "max_concurrent_jobs": MAX_CONCURRENT_JOBS
+            })
+            return
+
+        if path == "/api/diagnostics":
+            user = self._require_auth()
+            if not user:
+                return
+
+            try:
+                rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                rss_bytes = rss_kb * 1024
+            except Exception:
+                rss_bytes = 0
+
+            data_jobs_count = 0
+            data_dir_size = 0
+            try:
+                if os.path.isdir(DATA_DIR):
+                    for fn in os.listdir(DATA_DIR):
+                        fp = os.path.join(DATA_DIR, fn)
+                        if os.path.isfile(fp):
+                            data_dir_size += os.path.getsize(fp)
+                            if fn.startswith("leads_") and fn.endswith(".json"):
+                                data_jobs_count += 1
+            except Exception:
+                pass
+
+            self._send_json({
+                "status": "ok",
+                "uptime_seconds": int(time.time() - SERVER_START_TIME),
+                "active_jobs_count": _get_active_job_count(),
+                "max_concurrent_jobs": MAX_CONCURRENT_JOBS,
+                "data_jobs_count": data_jobs_count,
+                "data_dir_size_bytes": data_dir_size,
+                "scraper_up": check_scraper_health(),
+                "scraper_base": SCRAPER_BASE,
+                "supabase_configured": is_supabase_configured(),
+                "memory_rss_bytes": rss_bytes
             })
             return
 
@@ -961,13 +1332,13 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                                 leads = d.get("leads", [])
                                 jobs.append({
                                     "id": jid,
-                                    "status": "ok",
-                                    "stage": "Loaded from archive",
-                                    "progress_percent": 100,
-                                    "started_at": d.get("completed_at", 0),
+                                    "status": d.get("status", "ok"),
+                                    "stage": d.get("stage", "Loaded from archive"),
+                                    "progress_percent": d.get("progress_percent", 100),
+                                    "started_at": d.get("started_at", d.get("completed_at", 0)),
                                     "keyword": d.get("params", {}).get("keyword", ""),
                                     "city": d.get("params", {}).get("city", ""),
-                                    "metrics": {
+                                    "metrics": d.get("metrics") or {
                                         "total": len(leads),
                                         "hot": sum(1 for l in leads if l.get("lead_tier") == "HOT"),
                                         "warm": sum(1 for l in leads if l.get("lead_tier") == "WARM"),
@@ -1025,12 +1396,17 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                         job_info = {
                             "id": job_id,
                             "user_id": d.get("user_id"),
-                            "status": "ok",
-                            "stage": "Completed",
-                            "progress_percent": 100,
+                            "status": d.get("status", "ok"),
+                            "stage": d.get("stage", "Completed"),
+                            "progress_percent": d.get("progress_percent", 100),
                             "leads": leads,
+                            "created_at": d.get("created_at"),
+                            "updated_at": d.get("updated_at"),
+                            "started_at": d.get("started_at"),
+                            "completed_at": d.get("completed_at"),
+                            "error": d.get("error"),
                             "params": d.get("params", {}),
-                            "metrics": {
+                            "metrics": d.get("metrics") or {
                                 "total": len(leads),
                                 "hot": sum(1 for l in leads if l.get("lead_tier") == "HOT"),
                                 "warm": sum(1 for l in leads if l.get("lead_tier") == "WARM"),
@@ -1462,50 +1838,69 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": f"Scraper service is not reachable at {SCRAPER_BASE}. Is Docker running?"}, 503)
                 return
 
-            # Submit job to local scraper API
-            scraper_body = {
-                "name": f"web-{int(time.time())}",
-                "keywords": [full_query],
-                "lang": "en",
-                "zoom": 15,
-                "lat": str(lat),
-                "lon": str(lon),
-                "fast_mode": False,
-                "radius": 10000,
-                "depth": depth,
-                "email": extract_email,
-                "max_time": 600
-            }
-
-            try:
-                _, resp_raw = scraper_req("POST", "/api/v1/jobs", scraper_body)
-                job_id = json.loads(resp_raw.decode()).get("id")
-                if not job_id:
-                    self._send_json({"error": "No job ID returned from scraper service"}, 500)
+            # Bounded job admission under JOB_ADMISSION_LOCK
+            with JOB_ADMISSION_LOCK:
+                if _get_active_job_count() >= MAX_CONCURRENT_JOBS:
+                    self.send_response(429)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Retry-After", "30")
+                    cors_origin = self._get_cors_origin()
+                    if cors_origin:
+                        self.send_header("Access-Control-Allow-Origin", cors_origin)
+                        self.send_header("Access-Control-Allow-Credentials", "true")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        "error": f"Maximum concurrent jobs limit reached ({MAX_CONCURRENT_JOBS}). Please wait for an active job to finish."
+                    }).encode("utf-8"))
                     return
-            except urllib.error.HTTPError as e:
-                err_text = e.read().decode("utf-8", "replace")
-                self._send_json({"error": f"Scraper service HTTP {e.code}: {err_text}"}, e.code)
-                return
-            except Exception as e:
-                self._send_json({"error": f"Failed to start scrape: {str(e)}"}, 500)
-                return
+
+                # Submit job to local scraper API
+                scraper_body = {
+                    "name": f"web-{int(time.time())}",
+                    "keywords": [full_query],
+                    "lang": "en",
+                    "zoom": 15,
+                    "lat": str(lat),
+                    "lon": str(lon),
+                    "fast_mode": False,
+                    "radius": 10000,
+                    "depth": depth,
+                    "email": extract_email,
+                    "max_time": JOB_TIMEOUT_SECONDS
+                }
+
+                try:
+                    _, resp_raw = scraper_req("POST", "/api/v1/jobs", scraper_body)
+                    job_id = json.loads(resp_raw.decode()).get("id")
+                    if not job_id:
+                        self._send_json({"error": "No job ID returned from scraper service"}, 500)
+                        return
+                except urllib.error.HTTPError as e:
+                    err_text = e.read().decode("utf-8", "replace")
+                    self._send_json({"error": f"Scraper service HTTP {e.code}: {err_text}"}, e.code)
+                    return
+                except Exception as e:
+                    self._send_json({"error": f"Failed to start scrape: {str(e)}"}, 500)
+                    return
+
+                # Initialize persistent durable job record on disk and memory
+                job_params = {
+                    "keyword": keyword,
+                    "city": resolved_city,
+                    "full_query": full_query,
+                    "lat": lat,
+                    "lon": lon,
+                    "depth": depth,
+                    "email": extract_email,
+                    "socials": find_socials,
+                    "exclude_seen": exclude_seen,
+                    "max_time": JOB_TIMEOUT_SECONDS,
+                    "user_id": user.get("id"),
+                    "user_email": user.get("email")
+                }
+                _create_durable_job(job_id, user.get("id"), user.get("email"), job_params)
 
             # Launch background poll & processing thread with owner identification
-            job_params = {
-                "keyword": keyword,
-                "city": resolved_city,
-                "full_query": full_query,
-                "lat": lat,
-                "lon": lon,
-                "depth": depth,
-                "email": extract_email,
-                "socials": find_socials,
-                "exclude_seen": exclude_seen,
-                "max_time": 600,
-                "user_id": user.get("id"),
-                "user_email": user.get("email")
-            }
             t = threading.Thread(target=background_job_processor, args=(job_id, job_params), daemon=True)
             t.start()
 
@@ -1538,8 +1933,17 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             with JOB_LOCK:
                 if job_id in JOB_CACHE:
                     JOB_CACHE[job_id]["cancel_requested"] = True
-                    JOB_CACHE[job_id]["status"] = "cancelled"
-                    JOB_CACHE[job_id]["stage"] = "Extraction cancelled by user."
+
+            _update_durable_job(job_id, {
+                "status": "cancelled",
+                "stage": "Extraction cancelled by user.",
+                "completed_at": time.time(),
+                "error": "Cancelled by user"
+            })
+
+            # Terminate any child subprocesses associated with this job
+            _terminate_job_processes(job_id)
+
             try:
                 scraper_req("DELETE", f"/api/v1/jobs/{job_id}", timeout=5)
             except Exception:
@@ -1703,6 +2107,14 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
 
 
 def run_server():
+    # Phase 2 Reliability: Run restart recovery and retention cleanup on startup
+    interrupted = recover_interrupted_jobs(DATA_DIR)
+    if interrupted:
+        print(f"🔄 Recovered {interrupted} interrupted job(s) from previous session.")
+    cleanup_info = cleanup_stale_jobs_and_temp_files(DATA_DIR)
+    if cleanup_info.get("pruned_jobs") or cleanup_info.get("pruned_temps"):
+        print(f"🧹 Cleaned up {cleanup_info.get('pruned_jobs')} stale job(s) and {cleanup_info.get('pruned_temps')} temp file(s).")
+
     server = ThreadingHTTPServer((HOST, PORT), DashboardRequestHandler)
     print("=" * 65)
     print(f"🗺️  Google Maps Scraper Pro Dashboard running at:")
