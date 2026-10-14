@@ -9,6 +9,7 @@ Provides:
 - Multi-format exports (Standard CSV, CRM / Cold Email Outreach CSV, JSON).
 """
 import csv
+import fcntl
 import hashlib
 import hmac
 import io
@@ -18,6 +19,7 @@ import os
 import re
 import resource
 import secrets
+import signal
 import socketserver
 import subprocess
 import sys
@@ -51,10 +53,58 @@ class SecretRedactionFilter(logging.Filter):
 logger = logging.getLogger("leadmap")
 if not logger.handlers:
     _handler = logging.StreamHandler(sys.stdout)
-    _handler.setFormatter(logging.Formatter("[%(asctime)s] [%(levelname)s] [leadmap] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+    if os.environ.get("LOG_FORMAT", "").lower() == "json":
+        class JsonLogFormatter(logging.Formatter):
+            def format(self, record):
+                log_record = {
+                    "timestamp": self.formatTime(record, "%Y-%m-%d %H:%M:%S"),
+                    "level": record.levelname,
+                    "logger": record.name,
+                    "message": record.getMessage()
+                }
+                return json.dumps(log_record)
+        _handler.setFormatter(JsonLogFormatter())
+    else:
+        _handler.setFormatter(logging.Formatter("[%(asctime)s] [%(levelname)s] [leadmap] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
     _handler.addFilter(SecretRedactionFilter())
     logger.addHandler(_handler)
     logger.setLevel(logging.INFO)
+
+def validate_environment():
+    """Validate server configuration and prerequisites before startup.
+
+    Returns (bool, str): (True, "OK") or (False, "Descriptive error message").
+    """
+    try:
+        p = int(PORT)
+        if not (1 <= p <= 65535):
+            return False, f"Invalid DASHBOARD_PORT '{PORT}': Must be between 1 and 65535."
+    except (ValueError, TypeError):
+        return False, f"Invalid DASHBOARD_PORT '{PORT}': Must be an integer."
+
+    try:
+        mcj = int(MAX_CONCURRENT_JOBS)
+        if mcj < 1:
+            return False, f"Invalid MAX_CONCURRENT_JOBS '{MAX_CONCURRENT_JOBS}': Must be >= 1."
+    except (ValueError, TypeError):
+        return False, f"Invalid MAX_CONCURRENT_JOBS '{MAX_CONCURRENT_JOBS}': Must be an integer."
+
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        test_probe = os.path.join(DATA_DIR, ".write_test")
+        with open(test_probe, "w") as f:
+            f.write("probe")
+        if os.path.exists(test_probe):
+            os.remove(test_probe)
+    except Exception as e:
+        return False, f"DATA_DIR '{DATA_DIR}' is not writable: {e}"
+
+    sb_url = os.environ.get("SUPABASE_URL", "").strip()
+    sb_key = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "") or os.environ.get("SUPABASE_KEY", "")).strip()
+    if sb_url and not sb_key:
+        return False, "SUPABASE_URL is provided, but SUPABASE_SERVICE_ROLE_KEY or SUPABASE_KEY is missing."
+
+    return True, "OK"
 
 # Load .env
 _env_path = os.path.join(os.path.dirname(__file__), ".env")
@@ -91,9 +141,68 @@ MAX_CONCURRENT_JOBS = int(os.environ.get("MAX_CONCURRENT_JOBS", 2))
 JOB_TIMEOUT_SECONDS = int(os.environ.get("JOB_TIMEOUT_SECONDS", 600))
 JOB_RETENTION_DAYS = int(os.environ.get("JOB_RETENTION_DAYS", 30))
 MAX_COMPLETED_JOBS = int(os.environ.get("MAX_COMPLETED_JOBS", 100))
-JOB_ADMISSION_LOCK = threading.RLock()
+
+class InterProcessAdmissionLock:
+    """Inter-process POSIX file lock and reentrant thread lock for job admission."""
+    def __init__(self, lock_file_path=None):
+        self.thread_lock = threading.RLock()
+        self.lock_file_path = lock_file_path
+        self._fd = None
+        self._reentrant_count = 0
+
+    def __enter__(self):
+        self.thread_lock.acquire()
+        if self._reentrant_count == 0:
+            target_path = self.lock_file_path or os.path.join(DATA_DIR, ".job_admission.lock")
+            try:
+                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                self._fd = os.open(target_path, os.O_CREAT | os.O_RDWR, 0o600)
+                fcntl.flock(self._fd, fcntl.LOCK_EX)
+            except Exception:
+                # Fall back cleanly if flock is unsupported on host filesystem
+                pass
+        self._reentrant_count += 1
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._reentrant_count -= 1
+        if self._reentrant_count == 0 and self._fd is not None:
+            try:
+                fcntl.flock(self._fd, fcntl.LOCK_UN)
+                os.close(self._fd)
+            except Exception:
+                pass
+            self._fd = None
+        self.thread_lock.release()
+
+JOB_ADMISSION_LOCK = InterProcessAdmissionLock()
 PROCESS_LOCK = threading.Lock()
 JOB_PROCESSES = {}  # job_id -> set of subprocess.Popen instances
+
+SERVER_SHUTDOWN_EVENT = threading.Event()
+_ACTIVE_SERVER_INSTANCE = None
+
+def graceful_shutdown_signal_handler(signum, frame):
+    """Handle SIGTERM / SIGINT by stopping jobs, cleaning child processes, and shutting down server."""
+    sig_name = "SIGTERM" if signum == signal.SIGTERM else ("SIGINT" if signum == signal.SIGINT else str(signum))
+    logger.info(f"Received {sig_name}, initiating graceful shutdown...")
+    SERVER_SHUTDOWN_EVENT.set()
+
+    # Terminate any active scraper child processes cleanly
+    with PROCESS_LOCK:
+        active_job_ids = list(JOB_PROCESSES.keys())
+    for jid in active_job_ids:
+        _terminate_job_processes(jid, grace_timeout=1.0, sig=signal.SIGTERM)
+
+    # Trigger server shutdown if running
+    global _ACTIVE_SERVER_INSTANCE
+    if _ACTIVE_SERVER_INSTANCE is not None:
+        def _async_stop():
+            try:
+                _ACTIVE_SERVER_INSTANCE.shutdown()
+            except Exception:
+                pass
+        threading.Thread(target=_async_stop, daemon=True).start()
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -184,7 +293,7 @@ def _unregister_job_process(job_id: str, proc):
             if not JOB_PROCESSES[job_id]:
                 JOB_PROCESSES.pop(job_id, None)
 
-def _terminate_job_processes(job_id: str, grace_timeout: float = 5.0):
+def _terminate_job_processes(job_id: str, grace_timeout: float = 5.0, sig=None):
     """Safely terminate child subprocesses belonging exclusively to job_id.
 
     Applies graceful SIGTERM first, waits up to grace_timeout seconds,
@@ -1245,6 +1354,13 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             except Exception:
                 pass
 
+            disk_free_bytes = 0
+            try:
+                vfs = os.statvfs(DATA_DIR)
+                disk_free_bytes = vfs.f_bavail * vfs.f_frsize
+            except Exception:
+                pass
+
             self._send_json({
                 "status": "ok",
                 "uptime_seconds": int(time.time() - SERVER_START_TIME),
@@ -1252,6 +1368,7 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                 "max_concurrent_jobs": MAX_CONCURRENT_JOBS,
                 "data_jobs_count": data_jobs_count,
                 "data_dir_size_bytes": data_dir_size,
+                "disk_free_bytes": disk_free_bytes,
                 "scraper_up": check_scraper_health(),
                 "scraper_base": SCRAPER_BASE,
                 "supabase_configured": is_supabase_configured(),
@@ -2107,6 +2224,21 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
 
 
 def run_server():
+    valid, err_msg = validate_environment()
+    if not valid:
+        logger.error(f"Configuration error: {err_msg}")
+        print(f"❌ Configuration error: {err_msg}", file=sys.stderr)
+        sys.exit(1)
+
+    global _ACTIVE_SERVER_INSTANCE
+
+    # Register OS signal handlers for graceful shutdown (systemd SIGTERM / Ctrl+C SIGINT)
+    try:
+        signal.signal(signal.SIGTERM, graceful_shutdown_signal_handler)
+        signal.signal(signal.SIGINT, graceful_shutdown_signal_handler)
+    except (ValueError, AttributeError):
+        pass
+
     # Phase 2 Reliability: Run restart recovery and retention cleanup on startup
     interrupted = recover_interrupted_jobs(DATA_DIR)
     if interrupted:
@@ -2116,6 +2248,7 @@ def run_server():
         print(f"🧹 Cleaned up {cleanup_info.get('pruned_jobs')} stale job(s) and {cleanup_info.get('pruned_temps')} temp file(s).")
 
     server = ThreadingHTTPServer((HOST, PORT), DashboardRequestHandler)
+    _ACTIVE_SERVER_INSTANCE = server
     print("=" * 65)
     print(f"🗺️  Google Maps Scraper Pro Dashboard running at:")
     print(f"    👉  http://{HOST}:{PORT}")
@@ -2126,7 +2259,7 @@ def run_server():
     print("=" * 65)
     try:
         server.serve_forever()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         print("\nShutting down dashboard server...")
         server.shutdown()
 

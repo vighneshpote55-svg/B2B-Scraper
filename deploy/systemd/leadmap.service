@@ -1,0 +1,48 @@
+# LeadMap Pro — Systemd Production Service Unit
+# Path: /etc/systemd/system/leadmap.service
+
+[Unit]
+Description=LeadMap Pro B2B Intelligence & Scraping Dashboard
+Documentation=https://github.com/vighneshpote55-svg/B2B-Scraper
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=leadmap
+Group=leadmap
+WorkingDirectory=/opt/leadmap
+EnvironmentFile=/opt/leadmap/.env
+ExecStart=/usr/bin/python3 /opt/leadmap/dashboard.py
+
+# Process Management & Restarts
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Hardened Security & Isolation Sandbox
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/leadmap/data /opt/leadmap/backups
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+
+# Resource Limits
+LimitNOFILE=65535
+MemoryMax=2G
+CPUQuota=200%
+
+# Standard Output & Error Logging (Journald)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=leadmap
+
+[Install]
+WantedBy=multi-user.target

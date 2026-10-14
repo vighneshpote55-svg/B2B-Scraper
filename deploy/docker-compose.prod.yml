@@ -1,0 +1,40 @@
+# LeadMap Pro — Hardened Production Scraper Docker Compose
+# Pinned to gosom/google-maps-scraper:v1.18.1 with resource bounds and loopback-only binding
+
+services:
+  google-maps-scraper:
+    image: gosom/google-maps-scraper:v1.18.1
+    container_name: gmaps-scraper-prod
+    restart: always
+    command: ["-web", "-data-folder", "/gmapsdata", "-exit-on-inactivity", "30m", "-c", "4"]
+    ports:
+      # STRICT SECURITY BOUNDARY: Loopback only. NEVER bind to 0.0.0.0.
+      - "127.0.0.1:${SCRAPER_PORT:-8085}:8080"
+    volumes:
+      - gmaps_prod_data:/gmapsdata
+      - gmaps_prod_cache:/opt
+    environment:
+      - TZ=UTC
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 4096M
+        reservations:
+          cpus: "0.50"
+          memory: 1024M
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  gmaps_prod_data:
+  gmaps_prod_cache:

@@ -701,7 +701,7 @@
             body: JSON.stringify({ job_id: currentJobId })
           });
           const data = await res.json();
-          clearInterval(pollTimer);
+          stopPolling();
           clearInterval(elapsedTimer);
           stopScrapingState();
           progressStageTitle.textContent = 'Extraction Stopped';
@@ -813,13 +813,37 @@
     }, 1000);
   }
 
-  // Poll Job Progress with smooth tweening
+  // Adaptive Polling with Exponential Backoff
+  let pollBackoffMs = 2500;
+  const MIN_POLL_INTERVAL_MS = 2500;
+  const MAX_POLL_INTERVAL_MS = 30000;
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearTimeout(pollTimer);
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+    pollBackoffMs = MIN_POLL_INTERVAL_MS;
+  }
+
+  // Poll Job Progress with adaptive backoff and smooth tweening
   function startPolling(jobId) {
-    clearInterval(pollTimer);
-    pollTimer = setInterval(async () => {
+    stopPolling();
+    pollBackoffMs = MIN_POLL_INTERVAL_MS;
+
+    const pollStep = async () => {
       try {
         const res = await authFetch(`/api/job/${jobId}/status`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          // Exponential backoff on HTTP error (e.g. 500, 502, 503, 504)
+          pollBackoffMs = Math.min(pollBackoffMs * 2, MAX_POLL_INTERVAL_MS);
+          pollTimer = setTimeout(pollStep, pollBackoffMs);
+          return;
+        }
+
+        // Reset backoff interval on successful HTTP response
+        pollBackoffMs = MIN_POLL_INTERVAL_MS;
         const job = await res.json();
 
         // Update UI progress with Anime.js width tweening
@@ -835,7 +859,7 @@
         updatePipelineNodes(pct, false);
 
         if (job.status === 'ok') {
-          clearInterval(pollTimer);
+          stopPolling();
           clearInterval(elapsedTimer);
           updatePipelineNodes(100, true);
           runAnimation(progressBarFill, {
@@ -866,7 +890,7 @@
           showToast(`Done! Extracted ${job.leads ? job.leads.length : 0} leads.`, 'success');
 
         } else if (job.status === 'failed') {
-          clearInterval(pollTimer);
+          stopPolling();
           clearInterval(elapsedTimer);
           stopScrapingState();
           loadOverviewData(false);
@@ -876,11 +900,19 @@
           progressSubtext.textContent = errDetail;
           if (btnRetryScrape) btnRetryScrape.classList.remove('is-hidden');
           if (btnCancelScrape) btnCancelScrape.classList.add('is-hidden');
+        } else {
+          // Schedule next poll step
+          pollTimer = setTimeout(pollStep, pollBackoffMs);
         }
       } catch (err) {
         console.error('Poll error:', err);
+        // Exponential backoff on network failure
+        pollBackoffMs = Math.min(pollBackoffMs * 2, MAX_POLL_INTERVAL_MS);
+        pollTimer = setTimeout(pollStep, pollBackoffMs);
       }
-    }, 2500);
+    };
+
+    pollTimer = setTimeout(pollStep, pollBackoffMs);
   }
 
   function stopScrapingState() {
