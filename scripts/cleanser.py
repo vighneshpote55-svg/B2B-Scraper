@@ -898,18 +898,22 @@ def sanitize_csv_cell(val):
     if isinstance(val, (int, float)):
         return val
     val_str = str(val)
-    stripped = val_str.lstrip()
+    # Strip leading ASCII, Unicode whitespace, and BOM characters
+    stripped = val_str.lstrip(" \t\r\n\ufeff\xa0\u200b\u2028\u2029")
     if not stripped:
         return val_str
-    if stripped[0] in ("=", "@", "\t", "\r"):
+    if stripped[0] in ("=", "@", "\t", "\r", "|", "%"):
         return "'" + val_str
     if stripped[0] in ("+", "-"):
+        if " " in stripped or "\t" in stripped:
+            return "'" + val_str
         try:
             float(stripped)
             return val_str
         except ValueError:
             return "'" + val_str
     return val_str
+
 
 
 def sanitize_csv_row(row_dict: dict) -> dict:

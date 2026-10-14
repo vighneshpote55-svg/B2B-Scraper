@@ -1767,20 +1767,48 @@ Lead Partnerships Team`;
     }
   }
 
+  function sanitizeCsvCell(val) {
+    if (val === undefined || val === null) {
+      return '';
+    }
+    if (typeof val === 'number') {
+      return Number.isFinite(val) ? String(val) : '';
+    }
+    const valStr = String(val);
+    if (!valStr) {
+      return '';
+    }
+    // Strip leading ASCII and Unicode whitespace
+    const trimmedLeft = valStr.replace(/^[\s\uFEFF\xA0]+/, '');
+    if (!trimmedLeft) {
+      return valStr;
+    }
+    const firstChar = trimmedLeft.charAt(0);
+    // Formula triggers: =, @, tab (\t), carriage return (\r), pipe (|), percent (%)
+    if (firstChar === '=' || firstChar === '@' || firstChar === '\t' || firstChar === '\r' || firstChar === '|' || firstChar === '%') {
+      return `'` + valStr;
+    }
+    // Arithmetic triggers (+ or -)
+    if (firstChar === '+' || firstChar === '-') {
+      const num = Number(trimmedLeft);
+      if (!Number.isNaN(num) && !trimmedLeft.includes(' ') && !trimmedLeft.includes('\t')) {
+        return valStr; // Legitimate numeric value preserved (e.g. -97.7431, +100)
+      }
+      return `'` + valStr;
+    }
+    return valStr;
+  }
+
   function downloadSelectedLeadsCsv(leads) {
     const fields = ['lead_tier', 'lead_score', 'title', 'phone', 'emails', 'website', 'category', 'address', 'review_rating', 'review_count', 'instagram', 'facebook', 'linkedin'];
     const headerLine = fields.join(',');
     const rows = leads.map((l) => {
       return fields.map((f) => {
-        let val = l[f] === undefined || l[f] === null ? '' : String(l[f]);
-        // CSV Formula Injection Prevention: neutralize '=', '+', '-', '@', tab or carriage return
-        if (/^[=+\-@\t\r]/.test(val)) {
-          val = `'` + val;
+        let cell = sanitizeCsvCell(l[f]);
+        if (cell.includes('"') || cell.includes(',') || cell.includes('\n') || cell.includes('\r')) {
+          cell = `"${cell.replace(/"/g, '""')}"`;
         }
-        if (val.includes('"') || val.includes(',') || val.includes('\n') || val.includes('\r')) {
-          val = `"${val.replace(/"/g, '""')}"`;
-        }
-        return val;
+        return cell;
       }).join(',');
     });
 
@@ -1795,6 +1823,7 @@ Lead Partnerships Team`;
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   }
+
 
   // ── Leaflet Interactive Map View ───────────────────────────────────────────
   let mapResizeObserver = null;

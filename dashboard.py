@@ -88,6 +88,25 @@ def _get_job_file_path(job_id: str):
         return None
     return safe_path
 
+def _get_job_owner_id(job_id: str):
+    """Retrieve owner user_id for a job from memory cache or persisted disk file."""
+    if not job_id:
+        return None
+    with JOB_LOCK:
+        if job_id in JOB_CACHE:
+            uid = JOB_CACHE[job_id].get("user_id") or JOB_CACHE[job_id].get("params", {}).get("user_id")
+            if uid:
+                return uid
+    saved_file = _get_job_file_path(job_id)
+    if saved_file and os.path.isfile(saved_file):
+        try:
+            with open(saved_file, "r") as f:
+                d = json.load(f)
+                return d.get("user_id") or d.get("params", {}).get("user_id")
+        except Exception:
+            return None
+    return None
+
 USER_LOCK = threading.Lock()
 
 def _atomic_json_write(filepath, data):
@@ -275,10 +294,8 @@ def _validate_and_consume_reset_token(token, new_password):
     resets[token] = reset_info
     _save_resets(resets)
 
-    # Invalidate all active sessions for this user (prevent ongoing access with old credentials)
-    sessions = _load_sessions()
-    sessions = {k: v for k, v in sessions.items() if v.get("email", "").lower() != email}
-    _save_sessions(sessions)
+    # Invalidate all active sessions for this user atomically under SESSION_LOCK
+    _revoke_sessions_for_user(email)
 
     return True, "Password updated successfully. You can now sign in with your new password."
 
@@ -317,19 +334,87 @@ def _save_users(users):
     with USER_LOCK:
         _atomic_json_write(USERS_FILE, users)
 
+SESSION_LOCK = threading.RLock()
+
+def _load_sessions_unlocked():
+    if not os.path.isfile(SESSIONS_FILE):
+        return {}
+    try:
+        with open(SESSIONS_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _save_sessions_unlocked(sessions):
+    _atomic_json_write(SESSIONS_FILE, sessions)
+
 def _load_sessions():
-    with USER_LOCK:
-        if not os.path.isfile(SESSIONS_FILE):
-            return {}
-        try:
-            with open(SESSIONS_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            return {}
+    with SESSION_LOCK:
+        return _load_sessions_unlocked()
 
 def _save_sessions(sessions):
-    with USER_LOCK:
-        _atomic_json_write(SESSIONS_FILE, sessions)
+    with SESSION_LOCK:
+        _save_sessions_unlocked(sessions)
+
+def _mutate_sessions(mutator_fn):
+    """Transactionally load, mutate, and save sessions under SESSION_LOCK.
+
+    Guarantees atomic read-modify-write semantics across concurrent threads.
+    """
+    with SESSION_LOCK:
+        sessions = _load_sessions_unlocked()
+        result = mutator_fn(sessions)
+        _save_sessions_unlocked(sessions)
+        return result
+
+def _add_session(token: str, email: str, user_id: str):
+    """Atomically insert a new session and prune expired sessions under SESSION_LOCK."""
+    def _add(sessions):
+        now = time.time()
+        for k in list(sessions.keys()):
+            exp = sessions[k].get("expires_at", sessions[k].get("created_at", 0) + SESSION_TTL)
+            if exp <= now:
+                sessions.pop(k, None)
+        sessions[token] = {
+            "email": email.strip().lower(),
+            "user_id": user_id,
+            "created_at": now,
+            "expires_at": now + SESSION_TTL
+        }
+        return token
+    return _mutate_sessions(_add)
+
+def _revoke_session(token: str):
+    """Atomically remove a session token and prune expired sessions under SESSION_LOCK."""
+    def _revoke(sessions):
+        revoked = False
+        if token and token in sessions:
+            sessions.pop(token, None)
+            revoked = True
+        now = time.time()
+        for k in list(sessions.keys()):
+            exp = sessions[k].get("expires_at", sessions[k].get("created_at", 0) + SESSION_TTL)
+            if exp <= now:
+                sessions.pop(k, None)
+        return revoked
+    return _mutate_sessions(_revoke)
+
+def _revoke_sessions_for_user(email: str):
+    """Atomically invalidate all active sessions for a specific user under SESSION_LOCK."""
+    def _revoke_all(sessions):
+        target = (email or "").strip().lower()
+        count = 0
+        now = time.time()
+        for k in list(sessions.keys()):
+            exp = sessions[k].get("expires_at", sessions[k].get("created_at", 0) + SESSION_TTL)
+            if exp <= now:
+                sessions.pop(k, None)
+            elif sessions[k].get("email", "").strip().lower() == target:
+                sessions.pop(k, None)
+                count += 1
+        return count
+    return _mutate_sessions(_revoke_all)
+
 
 # Include cleanser module
 _repo_root = os.path.abspath(os.path.dirname(__file__))
@@ -444,6 +529,8 @@ def background_job_processor(job_id, params):
             "started_at": time.time(),
             "leads": [],
             "params": params,
+            "user_id": params.get("user_id"),
+            "user_email": params.get("user_email"),
             "error": None
         }
 
@@ -551,21 +638,21 @@ def background_job_processor(job_id, params):
                 JOB_CACHE[job_id]["progress_percent"] = 96
             cleaned_leads = enrich_socials(cleaned_leads)
 
-        # Save to data directory
+        # Save to data directory atomically with owner tagging
         data_file = os.path.join(DATA_DIR, f"leads_{job_id}.json")
-        with open(data_file, "w") as f:
-            json.dump({
-                "job_id": job_id,
-                "params": params,
-                "completed_at": time.time(),
-                "leads": cleaned_leads,
-                "skipped_previous_count": len(skipped_previous),
-                "metrics": {
-                    "total": len(cleaned_leads),
-                    "skipped_previous": len(skipped_previous),
-                    "raw_extracted": len(cleaned_leads) + len(skipped_previous)
-                }
-            }, f, indent=2)
+        _atomic_json_write(data_file, {
+            "job_id": job_id,
+            "user_id": params.get("user_id"),
+            "params": params,
+            "completed_at": time.time(),
+            "leads": cleaned_leads,
+            "skipped_previous_count": len(skipped_previous),
+            "metrics": {
+                "total": len(cleaned_leads),
+                "skipped_previous": len(skipped_previous),
+                "raw_extracted": len(cleaned_leads) + len(skipped_previous)
+            }
+        })
 
         # Count metrics
         hot_cnt = sum(1 for l in cleaned_leads if l.get("lead_tier") == "HOT")
@@ -837,12 +924,17 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path in ("/api/jobs", "/api/history"):
-            if not self._require_auth():
+            user = self._require_auth()
+            if not user:
                 return
+            current_uid = user.get("id")
             # List past and current jobs
             jobs = []
             with JOB_LOCK:
                 for j in JOB_CACHE.values():
+                    j_uid = j.get("user_id") or j.get("params", {}).get("user_id")
+                    if j_uid and j_uid != current_uid:
+                        continue
                     jobs.append({
                         "id": j.get("id"),
                         "status": j.get("status"),
@@ -863,6 +955,9 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                             fp = os.path.join(DATA_DIR, fn)
                             with open(fp) as f:
                                 d = json.load(f)
+                                file_uid = d.get("user_id") or d.get("params", {}).get("user_id")
+                                if file_uid and file_uid != current_uid:
+                                    continue
                                 leads = d.get("leads", [])
                                 jobs.append({
                                     "id": jid,
@@ -906,7 +1001,8 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path.startswith("/api/job/") and path.endswith("/status"):
-            if not self._require_auth():
+            user = self._require_auth()
+            if not user:
                 return
             parts = path.split("/")
             if len(parts) < 4:
@@ -928,6 +1024,7 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                         leads = d.get("leads", [])
                         job_info = {
                             "id": job_id,
+                            "user_id": d.get("user_id"),
                             "status": "ok",
                             "stage": "Completed",
                             "progress_percent": 100,
@@ -974,11 +1071,17 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": "Job not found"}, 404)
                 return
 
+            job_owner = job_info.get("user_id") or job_info.get("params", {}).get("user_id")
+            if job_owner and job_owner != user.get("id"):
+                self._send_json({"error": "Forbidden: You do not have permission to access this job"}, 403)
+                return
+
             self._send_json(job_info)
             return
 
         if path.startswith("/api/job/") and path.endswith("/leads"):
-            if not self._require_auth():
+            user = self._require_auth()
+            if not user:
                 return
             parts = path.split("/")
             if len(parts) < 4:
@@ -988,6 +1091,12 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             if not _validate_job_id(job_id):
                 self._send_json({"error": "Invalid job ID format"}, 400)
                 return
+
+            job_owner = _get_job_owner_id(job_id)
+            if job_owner and job_owner != user.get("id"):
+                self._send_json({"error": "Forbidden: You do not have permission to access this job"}, 403)
+                return
+
             leads = []
             with JOB_LOCK:
                 if job_id in JOB_CACHE:
@@ -1009,12 +1118,19 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/export":
-            if not self._require_auth():
+            user = self._require_auth()
+            if not user:
                 return
             job_id = query.get("job_id", [""])[0].strip()
             if not _validate_job_id(job_id):
                 self._send_json({"error": "Invalid or missing job ID"}, 400)
                 return
+
+            job_owner = _get_job_owner_id(job_id)
+            if job_owner and job_owner != user.get("id"):
+                self._send_json({"error": "Forbidden: You do not have permission to export this job"}, 403)
+                return
+
             fmt = query.get("format", ["csv"])[0].lower()
 
             leads = []
@@ -1150,14 +1266,7 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                     print(f"[Supabase sync user error] {sbe}")
 
             token = secrets.token_hex(24)
-            sessions = _load_sessions()
-            sessions[token] = {
-                "email": email,
-                "user_id": user_id,
-                "created_at": time.time(),
-                "expires_at": time.time() + SESSION_TTL
-            }
-            _save_sessions(sessions)
+            _add_session(token, email, user_id)
 
             self._send_json({
                 "success": True,
@@ -1218,14 +1327,7 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                 _save_users(users)
 
             token = secrets.token_hex(24)
-            sessions = _load_sessions()
-            sessions[token] = {
-                "email": email,
-                "user_id": user.get("id"),
-                "created_at": time.time(),
-                "expires_at": time.time() + SESSION_TTL
-            }
-            _save_sessions(sessions)
+            _add_session(token, email, user.get("id"))
 
             # Record login timestamp in database if Supabase is active
             user["last_login_at"] = time.time()
@@ -1313,18 +1415,14 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else ""
             if not token and self.headers.get("X-Session-Token"):
                 token = self.headers.get("X-Session-Token").strip()
-            sessions = _load_sessions()
-            if token and token in sessions:
-                del sessions[token]
-            # Prune any expired sessions
-            now = time.time()
-            sessions = {k: v for k, v in sessions.items() if v.get("expires_at", v.get("created_at", 0) + SESSION_TTL) > now}
-            _save_sessions(sessions)
+            if token:
+                _revoke_session(token)
             self._send_json({"success": True, "message": "Logged out successfully."})
             return
 
         if path == "/api/scrape/start":
-            if not self._require_auth():
+            user = self._require_auth()
+            if not user:
                 return
 
             params = self._read_json_body()
@@ -1393,7 +1491,7 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": f"Failed to start scrape: {str(e)}"}, 500)
                 return
 
-            # Launch background poll & processing thread
+            # Launch background poll & processing thread with owner identification
             job_params = {
                 "keyword": keyword,
                 "city": resolved_city,
@@ -1404,7 +1502,9 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                 "email": extract_email,
                 "socials": find_socials,
                 "exclude_seen": exclude_seen,
-                "max_time": 600
+                "max_time": 600,
+                "user_id": user.get("id"),
+                "user_email": user.get("email")
             }
             t = threading.Thread(target=background_job_processor, args=(job_id, job_params), daemon=True)
             t.start()
@@ -1419,7 +1519,8 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/scrape/stop":
-            if not self._require_auth():
+            user = self._require_auth()
+            if not user:
                 return
             params = self._read_json_body()
             if params is None:
@@ -1428,6 +1529,12 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             if not job_id or not _validate_job_id(job_id):
                 self._send_json({"error": "Invalid or missing job_id"}, 400)
                 return
+
+            job_owner = _get_job_owner_id(job_id)
+            if job_owner and job_owner != user.get("id"):
+                self._send_json({"error": "Forbidden: You do not have permission to cancel this job"}, 403)
+                return
+
             with JOB_LOCK:
                 if job_id in JOB_CACHE:
                     JOB_CACHE[job_id]["cancel_requested"] = True
@@ -1535,7 +1642,8 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/supabase/sync":
-            if not self._require_auth():
+            user = self._require_auth()
+            if not user:
                 return
             body = self._read_json_body()
             if body is None:
@@ -1544,6 +1652,11 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
             if job_id and not _validate_job_id(job_id):
                 self._send_json({"error": "Invalid job_id format"}, 400)
                 return
+            if job_id:
+                job_owner = _get_job_owner_id(job_id)
+                if job_owner and job_owner != user.get("id"):
+                    self._send_json({"error": "Forbidden: You do not have permission to sync this job"}, 403)
+                    return
             custom_leads = body.get("leads")
 
             leads_to_sync = []
