@@ -1689,6 +1689,43 @@ class DashboardRequestHandler(SimpleHTTPRequestHandler):
                 self.wfile.write(output.getvalue().encode("utf-8"))
                 return
 
+            elif fmt in ("whatsapp", "wa"):
+                # Formatted specifically for external WhatsApp portal ingestion
+                output = io.StringIO()
+                wa_fields = [
+                    "phone", "name", "category", "rating", "address", "website",
+                    "custom_pitch", "consent_source", "whatsapp_status"
+                ]
+                writer = csv.DictWriter(output, fieldnames=wa_fields)
+                writer.writeheader()
+                for l in leads:
+                    wa_phone = l.get("whatsapp_phone_e164") or l.get("clean_phone") or l.get("phone", "")
+                    if not wa_phone:
+                        continue
+                    title = l.get("title", "")
+                    cat = l.get("category", "")
+                    rating = str(l.get("review_rating", ""))
+                    addr = l.get("address", "")
+                    pitch = f"Hi {title}, noticed your business in {addr}. We help {cat} businesses acquire qualified clients."
+                    writer.writerow({
+                        "phone": sanitize_csv_cell(wa_phone),
+                        "name": sanitize_csv_cell(title),
+                        "category": sanitize_csv_cell(cat),
+                        "rating": sanitize_csv_cell(rating),
+                        "address": sanitize_csv_cell(addr),
+                        "website": sanitize_csv_cell(l.get("website", "")),
+                        "custom_pitch": sanitize_csv_cell(pitch),
+                        "consent_source": sanitize_csv_cell(l.get("consent_source", "public_directory")),
+                        "whatsapp_status": sanitize_csv_cell(l.get("whatsapp_status", "eligible"))
+                    })
+                self.send_response(200)
+                self.send_header("Content-Type", "text/csv; charset=utf-8")
+                self.send_header("Content-Disposition", f'attachment; filename="{filename_base}_whatsapp_portal.csv"')
+                self.end_headers()
+                self.wfile.write(output.getvalue().encode("utf-8"))
+                return
+
+
             else:
                 # Standard Clean CSV
                 output = io.StringIO()

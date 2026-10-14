@@ -612,6 +612,40 @@ def export_leads(leads: list, fmt: str = "csv") -> tuple:
         writer.writerows(out_rows)
         return buf.getvalue().encode("utf-8"), "_crm_outreach.csv", "text/csv"
 
+    if fmt in ("whatsapp", "wa"):
+        headers = [
+            "phone", "name", "category", "rating", "address", "website",
+            "custom_pitch", "consent_source", "whatsapp_status"
+        ]
+        out_rows = []
+        for l in leads:
+            wa_phone = l.get("whatsapp_phone_e164") or l.get("clean_phone") or l.get("phone", "")
+            if not wa_phone:
+                continue
+            title = l.get("title", "")
+            cat = l.get("category", "")
+            rating = str(l.get("review_rating", ""))
+            addr = l.get("address", "")
+            pitch = f"Hi {title}, noticed your business in {addr}. We help {cat} businesses acquire qualified clients."
+            row = {
+                "phone": sanitize_csv_cell(wa_phone),
+                "name": sanitize_csv_cell(title),
+                "category": sanitize_csv_cell(cat),
+                "rating": sanitize_csv_cell(rating),
+                "address": sanitize_csv_cell(addr),
+                "website": sanitize_csv_cell(l.get("website", "")),
+                "custom_pitch": sanitize_csv_cell(pitch),
+                "consent_source": sanitize_csv_cell(l.get("consent_source", "public_directory")),
+                "whatsapp_status": sanitize_csv_cell(l.get("whatsapp_status", "eligible"))
+            }
+            out_rows.append(row)
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(out_rows)
+        return buf.getvalue().encode("utf-8"), "_whatsapp_portal.csv", "text/csv"
+
+
     # Default: Standard Clean CSV
     headers = [
         "title", "clean_phone", "emails", "website", "category",

@@ -206,8 +206,13 @@ def format_lead_for_supabase(lead: dict, job_id: str = "") -> dict:
         "score_reasons": reasons,
         "instagram": lead.get("instagram") or "",
         "facebook": lead.get("facebook") or "",
-        "linkedin": lead.get("linkedin") or ""
+        "linkedin": lead.get("linkedin") or "",
+        "whatsapp_status": lead.get("whatsapp_status") or "pending",
+        "whatsapp_phone_e164": lead.get("whatsapp_phone_e164") or "",
+        "whatsapp_last_exported_at": lead.get("whatsapp_last_exported_at") or None,
+        "consent_source": lead.get("consent_source") or "public_directory"
     }
+
 
 
 def sync_leads(leads, job_id="", supabase_url=None, supabase_key=None, table=None, batch_size=50, max_retries=3, retry_delay=0.5):

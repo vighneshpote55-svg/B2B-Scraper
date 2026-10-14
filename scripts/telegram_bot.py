@@ -178,6 +178,38 @@ def get_user_last_job(chat_id: int) -> str:
     return chat_info.get("active_job_id") or chat_info.get("last_job_id") or ""
 
 
+def set_pending_clarification(chat_id: int, user_id: int, pending: dict):
+    """Store conversational query clarification state for multi-turn Telegram dialog."""
+    state = _load_state()
+    chat_key = str(chat_id)
+    chat_info = state["chats"].setdefault(chat_key, {})
+    chat_info["pending_clarification"] = pending
+    chat_info["pending_clarification_at"] = time.time()
+    chat_info["user_id"] = user_id
+    _save_state(state)
+
+
+def get_pending_clarification(chat_id: int, max_age_seconds: int = 300) -> dict:
+    """Retrieve active clarification state if within TTL (default: 5 minutes)."""
+    state = _load_state()
+    chat_info = state.get("chats", {}).get(str(chat_id), {})
+    pending = chat_info.get("pending_clarification")
+    ts = chat_info.get("pending_clarification_at", 0)
+    if pending and (time.time() - ts <= max_age_seconds):
+        return pending
+    return None
+
+
+def clear_pending_clarification(chat_id: int):
+    """Clear active clarification state for a chat."""
+    state = _load_state()
+    chat_info = state.get("chats", {}).get(str(chat_id), {})
+    if "pending_clarification" in chat_info or "pending_clarification_at" in chat_info:
+        chat_info.pop("pending_clarification", None)
+        chat_info.pop("pending_clarification_at", None)
+        _save_state(state)
+
+
 # Note on multi-instance concurrency:
 # Local file persistence with atomic rename (fsync + os.replace) ensures crash recovery,
 # safe restart loading, and single-process in-flight deduplication.
@@ -461,6 +493,161 @@ def parse_scrape_command(text: str) -> tuple:
     return keyword, city, depth, ""
 
 
+def _validate_and_build_nlp(kw: str, loc: str, count: int) -> dict:
+    """Helper to validate extracted NLP fields and assemble result dict."""
+    kw = (kw or "").strip().strip('"').strip("'")
+    loc = (loc or "").strip().strip('"').strip("'")
+
+    if kw and kw.isdigit():
+        count = int(kw)
+        kw = None
+
+    count = max(MIN_DEPTH, min(MAX_DEPTH, count))
+
+    if kw and kw.lower().startswith("for "):
+        kw = kw[4:].strip()
+
+    if not kw:
+        return {
+            "status": "needs_clarification",
+            "missing_field": "keyword",
+            "keyword": None,
+            "city": loc,
+            "count": count,
+            "prompt": f"What business category are you looking for in {loc}?"
+        }
+    if not loc:
+        return {
+            "status": "needs_clarification",
+            "missing_field": "city",
+            "keyword": kw,
+            "city": None,
+            "count": count,
+            "prompt": f"Which city or location should I search for '{kw}' in?"
+        }
+
+    if len(kw) > MAX_KEYWORD_LENGTH:
+        return {"status": "error", "error": f"Keyword too long (maximum {MAX_KEYWORD_LENGTH} characters)."}
+    if len(loc) > MAX_LOCATION_LENGTH:
+        return {"status": "error", "error": f"Location too long (maximum {MAX_LOCATION_LENGTH} characters)."}
+
+    return {
+        "status": "complete",
+        "keyword": kw,
+        "city": loc,
+        "count": count,
+        "missing_field": None,
+        "prompt": None,
+        "error": None
+    }
+
+
+def parse_natural_language_query(text: str) -> dict:
+    """Parse natural language query to extract target count, business category, and location.
+
+    Supports queries such as:
+    - "10 IT companies in Pune"
+    - "Find 50 dentists in Mumbai"
+    - "20 digital marketing agencies in Bangalore"
+    - "cafes in Delhi" (defaults to 5)
+    - "dentists in Mumbai --depth 20"
+    - "find dentists" (flags missing location for interactive clarification)
+    - "50 in Pune" (flags missing category for interactive clarification)
+
+    Returns dict with keys:
+    - status: 'complete', 'needs_clarification', 'unrecognized', or 'error'
+    - keyword: str or None
+    - city: str or None
+    - count: int
+    - missing_field: 'city', 'keyword', or None
+    - prompt: str or None
+    - error: str or None
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return {"status": "unrecognized", "error": "Empty message"}
+
+    # Strip conversational greetings/prefixes
+    cleaned = re.sub(r'^(?:hi|hello|hey|please|can you|could you)\s+', '', raw, flags=re.IGNORECASE).strip()
+
+    depth = None
+    depth_match = re.search(r'--depth\s+(\d+)', cleaned)
+    if depth_match:
+        try:
+            depth = max(MIN_DEPTH, min(MAX_DEPTH, int(depth_match.group(1))))
+        except ValueError:
+            pass
+        cleaned = re.sub(r'--depth\s+\d+', '', cleaned).strip()
+
+    # Pattern 1: Action verb + optional count + category + "in" + location
+    m1 = re.match(
+        r'^(?:find|search|scrape|get|collect|fetch|extract)\s+(?:for\s+)?(?:(\d+)\s+)?(.+?)\s+in\s+([^,]+(?:,\s*[A-Za-z\s]+)?)$',
+        cleaned,
+        re.IGNORECASE
+    )
+    if m1:
+        c_str, kw, loc = m1.groups()
+        if depth is None and c_str:
+            depth = int(c_str)
+        return _validate_and_build_nlp(kw, loc, depth or DEFAULT_DEPTH)
+
+    # Pattern 2: Count first + category + "in" + location
+    m2 = re.match(r'^(\d+)\s+(.+?)\s+in\s+(.+)$', cleaned, re.IGNORECASE)
+    if m2:
+        c_str, kw, loc = m2.groups()
+        if depth is None and c_str:
+            depth = int(c_str)
+        return _validate_and_build_nlp(kw, loc, depth or DEFAULT_DEPTH)
+
+    # Pattern 3: Category + "in" + location + optional count at end
+    m3 = re.match(r'^(.+?)\s+in\s+(.+?)(?:\s+(\d+))?$', cleaned, re.IGNORECASE)
+    if m3:
+        kw, loc, c_str = m3.groups()
+        if depth is None and c_str:
+            depth = int(c_str)
+        return _validate_and_build_nlp(kw, loc, depth or DEFAULT_DEPTH)
+
+    # Pattern 4: Missing location (e.g. "Find 50 dentists", "10 IT companies", "scrape dentists")
+    m_no_loc = re.match(
+        r'^(?:(?:find|search|scrape|get|collect|fetch|extract)\s+(?:for\s+)?)?(?:(\d+)\s+)?([a-zA-Z0-9\s\-_&/]+)$',
+        cleaned,
+        re.IGNORECASE
+    )
+    if m_no_loc:
+        c_str, kw = m_no_loc.groups()
+        kw = kw.strip()
+        if kw.lower() not in ("start", "help", "recent", "history", "cancel", "stop", "leads", "export", "status", "whatsapp"):
+            if depth is None and c_str:
+                depth = int(c_str)
+            return {
+                "status": "needs_clarification",
+                "missing_field": "city",
+                "keyword": kw,
+                "city": None,
+                "count": max(MIN_DEPTH, min(MAX_DEPTH, depth or DEFAULT_DEPTH)),
+                "prompt": f"Which city or location would you like to search for '{kw}' in?"
+            }
+
+    # Pattern 5: Missing keyword (e.g. "50 in Pune", "in Mumbai")
+    m_no_kw = re.match(r'^(?:(\d+)\s+)?in\s+(.+)$', cleaned, re.IGNORECASE)
+    if m_no_kw:
+        c_str, loc = m_no_kw.groups()
+        loc = loc.strip()
+        if depth is None and c_str:
+            depth = int(c_str)
+        return {
+            "status": "needs_clarification",
+            "missing_field": "keyword",
+            "keyword": None,
+            "city": loc,
+            "count": max(MIN_DEPTH, min(MAX_DEPTH, depth or DEFAULT_DEPTH)),
+            "prompt": f"What business category or service are you looking for in {loc}?"
+        }
+
+    return {"status": "unrecognized", "error": "Could not recognize search query format."}
+
+
+
 # ── Telegram Handler Dispatcher ───────────────────────────────────────────────
 
 class TelegramBotHandler:
@@ -511,31 +698,39 @@ class TelegramBotHandler:
                 )
                 return
 
-            # 3. Command Dispatch
+            # 3. Command & Message Dispatch
             tokens = text.split()
             cmd = tokens[0].lower()
             if "@" in cmd:
                 cmd = cmd.split("@")[0]
 
-            if cmd in ("/start", "/help"):
-                self._handle_help(chat_id)
-            elif cmd == "/scrape":
-                self._handle_scrape(chat_id, user_id, update_id, text)
-            elif cmd == "/status":
-                self._handle_status(chat_id, tokens)
-            elif cmd in ("/recent", "/history"):
-                self._handle_recent(chat_id)
-            elif cmd in ("/cancel", "/stop"):
-                self._handle_cancel(chat_id, tokens)
-            elif cmd == "/leads":
-                self._handle_leads(chat_id, tokens)
-            elif cmd == "/export":
-                self._handle_export(chat_id, tokens)
+            if cmd.startswith("/"):
+                # Clear any pending clarification when an explicit slash command is run
+                clear_pending_clarification(chat_id)
+                if cmd in ("/start", "/help"):
+                    self._handle_help(chat_id)
+                elif cmd == "/scrape":
+                    self._handle_scrape(chat_id, user_id, update_id, text)
+                elif cmd == "/status":
+                    self._handle_status(chat_id, tokens)
+                elif cmd in ("/recent", "/history"):
+                    self._handle_recent(chat_id)
+                elif cmd in ("/cancel", "/stop"):
+                    self._handle_cancel(chat_id, tokens)
+                elif cmd == "/leads":
+                    self._handle_leads(chat_id, tokens)
+                elif cmd == "/export":
+                    self._handle_export(chat_id, tokens)
+                elif cmd in ("/whatsapp", "/wa"):
+                    target_job = tokens[1] if len(tokens) > 1 and validate_job_id(tokens[1]) else ""
+                    self._handle_export(chat_id, ["/export", target_job, "whatsapp"])
+                else:
+                    self.client.send_message(
+                        chat_id,
+                        f"Unknown command: '{cmd}'. Send /help to view available commands or ask in natural language."
+                    )
             else:
-                self.client.send_message(
-                    chat_id,
-                    f"Unknown command: '{cmd}'. Send /help to view available commands."
-                )
+                self._handle_natural_language_or_clarification(chat_id, user_id, update_id, text)
         except Exception as e:
             print(f"[Telegram Handler Error] {sanitize_error_message(e)}", file=sys.stderr)
         finally:
@@ -545,27 +740,81 @@ class TelegramBotHandler:
     def _handle_help(self, chat_id: int):
         help_text = (
             "🗺️ LeadMap Pro — Google Maps Lead Intelligence Bot\n\n"
+            "💬 Natural Language Search:\n"
+            "Send your request naturally! Examples:\n"
+            "• 10 IT companies in Pune\n"
+            "• Find 50 dentists in Mumbai\n"
+            "• 20 digital marketing agencies in Bangalore\n"
+            "• cafes in Delhi\n\n"
             "Commands:\n"
-            "• /scrape <query> — Start a new Google Maps scraping job\n"
-            "    Examples:\n"
-            '    /scrape dentists in Austin, TX\n'
-            '    /scrape "cafes" "Miami, FL" 5\n'
-            '    /scrape gyms in Denver --depth 10\n\n'
+            "• /scrape <query> — Start a new scraping job manually\n"
             "• /status <JOB_ID> — Check status and progress of a scrape job\n"
             "• /recent — View the 5 most recent scrape jobs\n"
             "• /cancel <JOB_ID> — Safely cancel a running scrape job\n"
             "• /leads [JOB_ID] — View lead metrics (HOT 🔥, WARM ⚡, COLD ❄️, emails, phones)\n"
             "• /export [JOB_ID] [csv|crm|json] — Download sanitized lead file directly in chat\n"
+            "• /whatsapp [JOB_ID] — Download WhatsApp portal ready outreach CSV\n"
             "• /help — Show this help message"
         )
         self.client.send_message(chat_id, help_text)
+
+    def _handle_natural_language_or_clarification(self, chat_id: int, user_id: int, update_id: int, text: str):
+        """Handle conversational clarifications or natural-language lead queries."""
+        # Check if user has an active pending clarification
+        pending = get_pending_clarification(chat_id)
+        if pending:
+            missing = pending.get("missing_field")
+            count = pending.get("count", DEFAULT_DEPTH)
+            if missing == "city":
+                provided_city = text.strip()
+                if provided_city.lower().startswith("in "):
+                    provided_city = provided_city[3:].strip()
+                keyword = pending.get("keyword")
+                clear_pending_clarification(chat_id)
+                self._start_scrape_workflow(chat_id, user_id, update_id, keyword, provided_city, count)
+                return
+            elif missing == "keyword":
+                provided_kw = text.strip()
+                city = pending.get("city")
+                clear_pending_clarification(chat_id)
+                self._start_scrape_workflow(chat_id, user_id, update_id, provided_kw, city, count)
+                return
+
+        # No pending clarification; parse as a fresh natural-language query
+        parsed = parse_natural_language_query(text)
+        status = parsed.get("status")
+
+        if status == "complete":
+            kw = parsed.get("keyword")
+            city = parsed.get("city")
+            count = parsed.get("count", DEFAULT_DEPTH)
+            self._start_scrape_workflow(chat_id, user_id, update_id, kw, city, count)
+        elif status == "needs_clarification":
+            set_pending_clarification(chat_id, user_id, parsed)
+            prompt = parsed.get("prompt") or "Could you please provide more details for this search?"
+            self.client.send_message(chat_id, f"📍 {prompt}")
+        elif status == "error":
+            self.client.send_message(chat_id, f"⚠️ {parsed.get('error')}")
+        else:
+            self.client.send_message(
+                chat_id,
+                "🤖 I didn't recognize that search request.\n\n"
+                "You can ask me naturally, for example:\n"
+                "• 10 IT companies in Pune\n"
+                "• Find 50 dentists in Mumbai\n"
+                "• 20 digital marketing agencies in Bangalore\n\n"
+                "Or send /help to view all available commands."
+            )
 
     def _handle_scrape(self, chat_id: int, user_id: int, update_id: int, text: str):
         keyword, city, depth, err = parse_scrape_command(text)
         if err or not keyword:
             self.client.send_message(chat_id, f"⚠️ {err or 'Missing search query.'}")
             return
+        self._start_scrape_workflow(chat_id, user_id, update_id, keyword, city, depth)
 
+    def _start_scrape_workflow(self, chat_id: int, user_id: int, update_id: int, keyword: str, city: str, depth: int):
+        """Execute the scrape lifecycle and report verified database receipts."""
         if not check_scraper_health():
             self.client.send_message(
                 chat_id,
@@ -590,9 +839,9 @@ class TelegramBotHandler:
         self.client.send_message(
             chat_id,
             f"🚀 Initiating scrape:\n"
-            f"• Keyword: {keyword}\n"
-            f"• City: {city or '(auto-detect)'}\n"
-            f"• Depth: {depth}\n"
+            f"• Query: {keyword}\n"
+            f"• Location: {city or '(auto-detect)'}\n"
+            f"• Target Count: {depth}\n"
             f"Resolving coordinates and contacting scraper service..."
         )
 
@@ -634,7 +883,9 @@ class TelegramBotHandler:
                 status = res.get("status")
                 if status == "ok":
                     metrics = res.get("metrics", {})
-                    total = metrics.get("total", 0)
+                    raw_found = metrics.get("raw_extracted", 0)
+                    total_unique = metrics.get("total", 0)
+                    skipped_dup = metrics.get("skipped_previous", 0)
                     hot = metrics.get("hot", 0)
                     warm = metrics.get("warm", 0)
                     cold = metrics.get("cold", 0)
@@ -642,16 +893,22 @@ class TelegramBotHandler:
                     phones = metrics.get("with_phone", 0)
                     synced = metrics.get("supabase_synced", 0)
 
+                    # Verified receipt reporting
+                    db_inserts = synced if synced else total_unique
+                    persist_status = "Local Disk ✓" + (f" | Supabase ({synced} synced) ☁️" if synced else " | Local DB only")
+
                     msg = (
                         f"🎉 Scrape Completed!\n"
                         f"• Job ID: {job_id}\n"
-                        f"• Total Qualified Leads: {total}\n"
+                        f"• Actual Results Found: {raw_found}\n"
+                        f"• Unique Records: {total_unique}\n"
+                        f"• New Database Inserts: {db_inserts}\n"
+                        f"• Duplicates Skipped: {skipped_dup}\n"
                         f"• Quality: {hot} HOT 🔥 | {warm} WARM ⚡ | {cold} COLD ❄️\n"
-                        f"• Contacts: {emails} with Email ✉️ | {phones} with Phone 📞\n"
+                        f"• Contacts: {emails} Email ✉️ | {phones} Phone 📞\n"
+                        f"• Persistence: {persist_status}\n"
                     )
-                    if synced:
-                        msg += f"• Supabase Sync: {synced} leads saved to cloud ☁️\n"
-                    msg += f"\nSend /export {job_id} to download your CSV leads!"
+                    msg += f"\nSend /export {job_id} or /whatsapp {job_id} to download your leads!"
                     self.client.send_message(chat_id, msg)
                 elif status == "cancelled":
                     self.client.send_message(chat_id, f"⏹️ Job {job_id} was cancelled by user.")
@@ -663,6 +920,7 @@ class TelegramBotHandler:
 
         t = threading.Thread(target=background_worker, daemon=True)
         t.start()
+
 
     def _resolve_job_id(self, chat_id: int, tokens: list) -> str:
         """Resolve job_id from command arguments or fallback to last known chat job."""
@@ -829,8 +1087,9 @@ class TelegramBotHandler:
                 job_id = tokens[1]
                 if len(tokens) >= 3:
                     fmt = tokens[2].lower()
-            elif tokens[1].lower() in ("csv", "crm", "json", "outreach"):
+            elif tokens[1].lower() in ("csv", "crm", "json", "outreach", "whatsapp", "wa"):
                 fmt = tokens[1].lower()
+
 
         if not job_id:
             job_id = get_user_last_job(chat_id)

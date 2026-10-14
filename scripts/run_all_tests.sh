@@ -62,6 +62,8 @@ else
 fi
 
 TEST_FILES=(
+    "tests/test_telegram_nlp_and_whatsapp.py"
+    "tests/test_telegram_bot_phase3.py"
     "tests/test_phase4_e2e_journey.py"
     "tests/test_phase4_browser_ux.py"
     "tests/test_phase4_security_hardening.py"
@@ -74,6 +76,7 @@ TEST_FILES=(
     "tests/test_security_phase1.py"
     "tests/test_security_phase2.py"
 )
+
 
 TOTAL_FAILED=0
 TOTAL_PASSED=0

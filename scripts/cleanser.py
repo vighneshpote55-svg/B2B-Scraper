@@ -232,6 +232,72 @@ def clean_phone(phone_input: str, default_country: str = "") -> str:
     return f"+{digits}" if len(digits) >= 10 else raw
 
 
+def format_e164_phone(phone_input: str, default_country: str = "91") -> str:
+    """Format and normalize phone number to strict E.164 standard (+[country_code][subscriber_number]).
+
+    Designed specifically for direct WhatsApp portal ingestion and wa.me routing.
+    Strips spaces, dashes, parentheses, and leading zeros.
+    """
+    if not phone_input or not isinstance(phone_input, str):
+        return ""
+
+    raw = phone_input.strip()
+    if not raw:
+        return ""
+
+    has_plus = raw.startswith("+")
+    digits = re.sub(r"[^\d]", "", raw)
+    if len(digits) < 7:
+        return ""
+
+    # Convert international '00' prefix
+    if raw.startswith("00") and len(digits) >= 9:
+        digits = digits[2:]
+        has_plus = True
+
+    if has_plus:
+        return f"+{digits}"
+
+    # Handle standard 10-digit mobile numbers
+    if len(digits) == 10:
+        cc = re.sub(r"[^\d]", "", default_country) or "91"
+        return f"+{cc}{digits}"
+
+    # Handle 11-digit numbers starting with 0 (e.g. 09876543210 in India/UK)
+    if len(digits) == 11 and digits.startswith("0"):
+        cc = re.sub(r"[^\d]", "", default_country) or "91"
+        return f"+{cc}{digits[1:]}"
+
+    # Handle 12-digit Indian numbers without plus (919876543210)
+    if len(digits) == 12 and digits.startswith("91"):
+        return f"+{digits}"
+
+    # Handle 11-digit US/Canada numbers without plus (15551234567)
+    if len(digits) == 11 and digits.startswith("1"):
+        return f"+{digits}"
+
+    if len(digits) >= 10:
+        return f"+{digits}"
+
+    return ""
+
+
+def is_whatsapp_eligible(phone_e164: str) -> bool:
+    """Determine whether an E.164 phone number is structurally valid for WhatsApp outreach.
+
+    Checks:
+    - Starts with '+'
+    - Contains 10 to 15 digits total (ITU-T E.164 specification)
+    """
+    if not phone_e164 or not isinstance(phone_e164, str):
+        return False
+    if not phone_e164.startswith("+"):
+        return False
+    digits = re.sub(r"[^\d]", "", phone_e164)
+    return 10 <= len(digits) <= 15
+
+
+
 def clean_social_url(url: str) -> str:
     """Clean tracking params (?igshid=, ?ref=, etc.) from social URLs."""
     if not url or not isinstance(url, str):
@@ -345,6 +411,12 @@ def clean_lead(record: dict) -> dict:
     rec["clean_phone"] = clean_phone(raw_phone)
     if not rec.get("phone"):
         rec["phone"] = rec["clean_phone"]
+
+    # WhatsApp E.164 Normalization & Eligibility Tagging
+    default_cc = os.environ.get("DEFAULT_PHONE_COUNTRY_CODE", "91")
+    rec["whatsapp_phone_e164"] = format_e164_phone(raw_phone, default_country=default_cc)
+    rec["whatsapp_status"] = "eligible" if is_whatsapp_eligible(rec["whatsapp_phone_e164"]) else "invalid_phone"
+    rec["consent_source"] = rec.get("consent_source") or "public_directory"
 
     # Clean Socials
     if "instagram" in rec:
